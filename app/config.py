@@ -29,6 +29,11 @@ class Config:
     EARTHQUAKE_CHECK_INTERVAL: int = 30
     EARTHQUAKE_MIN_MAGNITUDE: float = 4.0
     
+    # Loading Animation 配置
+    ENABLE_LOADING_ANIMATION: bool = os.getenv("ENABLE_LOADING_ANIMATION", "true").lower() == "true"
+    DEFAULT_LOADING_DURATION: int = int(os.getenv("DEFAULT_LOADING_DURATION", "2"))
+    MAX_LOADING_DURATION: int = int(os.getenv("MAX_LOADING_DURATION", "5"))
+    
     # 餐廳搜尋預設值
     DEFAULT_SEARCH_RADIUS: int = 1500
     NEAR_RADIUS: int = 500

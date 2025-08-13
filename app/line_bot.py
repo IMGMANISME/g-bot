@@ -1,7 +1,7 @@
 #app/line_bot.py
 from linebot import LineBotApi, WebhookHandler
 from linebot.models import MessageEvent, TextMessage, LocationMessage, TextSendMessage, QuickReply, QuickReplyButton, MessageAction
-from linebot.exceptions import InvalidSignatureError
+from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from app.realtime_search import needs_realtime_info, get_realtime_info
 from app.gemini_engine import query_gemini
 from app.memory import (
@@ -17,6 +17,8 @@ from app.utils.decorators import handle_exceptions, rate_limit
 from datetime import datetime
 import re
 import os
+import asyncio
+import time
 
 logger = setup_logger("line_bot")
 line_bot_api = LineBotApi(config.LINE_CHANNEL_ACCESS_TOKEN)
@@ -86,6 +88,61 @@ def safe_reply(event, message: str):
             line_bot_api.push_message(get_sender_id(event), TextSendMessage(text=message))
         except Exception as e:
             print(f"❌ push_message 也失敗：{e}")
+
+@handle_exceptions("⚠️ Loading 動畫失敗")
+def show_loading_animation(chat_id: str, duration: int = None):
+    """
+    顯示 Loading 動畫 (正在輸入指示器)
+    
+    Args:
+        chat_id: 聊天室ID (用戶ID或群組ID)
+        duration: 動畫持續時間（秒），None 使用預設值
+    """
+    # 檢查是否啟用 Loading animation
+    if not config.ENABLE_LOADING_ANIMATION:
+        return
+        
+    if duration is None:
+        duration = config.DEFAULT_LOADING_DURATION
+    
+    try:
+        # LINE Bot API 的 "正在輸入" 指示器
+        line_bot_api.show_loading_animation(chat_id)
+        logger.info(f"已向 {chat_id} 顯示 Loading 動畫")
+        
+        # 可以在這裡添加額外的延遲邏輯
+        if duration > 0:
+            time.sleep(min(duration, config.MAX_LOADING_DURATION))
+            
+    except LineBotApiError as e:
+        logger.warning(f"顯示 Loading 動畫失敗: {e}")
+    except Exception as e:
+        logger.error(f"Loading 動畫處理錯誤: {e}")
+
+@handle_exceptions("⚠️ 非同步回覆失敗")
+def safe_reply_with_loading(event, message: str, processing_time: int = None):
+    """
+    帶有 Loading 動畫的安全回覆
+    
+    Args:
+        event: LINE 事件物件
+        message: 要發送的訊息
+        processing_time: 處理時間（秒），None 使用預設值
+    """
+    if processing_time is None:
+        processing_time = config.DEFAULT_LOADING_DURATION
+        
+    chat_id = get_sender_id(event)
+    
+    # 顯示 Loading 動畫
+    show_loading_animation(chat_id, 0)  # 不等待，立即返回
+    
+    # 模擬處理時間
+    if processing_time > 0:
+        time.sleep(min(processing_time, config.MAX_LOADING_DURATION))
+    
+    # 發送回覆
+    safe_reply(event, message)
 
 # ==== 快速選單 ====
 def handle_quick_intro(event, line_bot_api, sender_id):
@@ -344,6 +401,9 @@ def handle_reminder_list(event, sender_id: str):
 @handle_exceptions("⚠️ 餐廳搜尋失敗")
 def handle_restaurant_search(event, sender_id: str, user_input: str):
     """處理餐廳搜尋"""
+    # 顯示 Loading 動畫
+    show_loading_animation(get_sender_id(event))
+    
     latlng = get_user_location(sender_id)
     if not latlng:
         safe_reply(event, "📍 請先傳送你的位置")
@@ -381,6 +441,9 @@ def handle_restaurant_search(event, sender_id: str, user_input: str):
 @handle_exceptions("⚠️ 即時查詢失敗")
 def handle_realtime_query(event, sender_id: str, user_input: str):
     """處理即時資訊查詢"""
+    # 顯示 Loading 動畫
+    show_loading_animation(get_sender_id(event))
+    
     try:
         realtime_info = get_realtime_info(user_input)
         save_message(sender_id, "user", user_input)
@@ -402,6 +465,9 @@ def handle_realtime_query(event, sender_id: str, user_input: str):
 @handle_exceptions("⚠️ 對話處理失敗")
 def handle_gemini_conversation(event, sender_id: str, user_input: str):
     """處理 Gemini 對話"""
+    # 顯示 Loading 動畫
+    show_loading_animation(get_sender_id(event))
+    
     save_message(sender_id, "user", user_input)
     
     messages = [
