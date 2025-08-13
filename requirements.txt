@@ -11,3 +11,4 @@ feedparser
 psycopg2-binary
 pytz
 schedule
+psutil

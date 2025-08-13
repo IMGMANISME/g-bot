@@ -1,15 +1,48 @@
 #app/memory.py
 from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, Boolean, Time, func
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.pool import QueuePool
 from datetime import datetime
 from datetime import time as dtime
+from contextlib import contextmanager
+from typing import List, Optional, Tuple
 import os
 import math
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+from app.config import config
+from app.utils.logger import setup_logger
+from app.utils.decorators import handle_exceptions
+
+logger = setup_logger("memory")
+
+# 建立資料庫引擎，使用連接池
+engine = create_engine(
+    config.DATABASE_URL,
+    pool_pre_ping=True,  # 檢查連接是否有效
+    poolclass=QueuePool,
+    pool_size=10,        # 連接池大小
+    max_overflow=20,     # 最大溢出連接數
+    pool_recycle=3600,   # 連接回收時間（秒）
+    pool_timeout=30,     # 取得連接的超時時間
+    echo=False           # 設為 True 可顯示 SQL 語句
+)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+@contextmanager
+def get_db_session():
+    """取得資料庫會話的上下文管理器"""
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        logger.error(f"資料庫操作失敗: {e}")
+        raise
+    finally:
+        session.close()
 
 class Message(Base):
     __tablename__ = "memory"
@@ -52,37 +85,62 @@ class ScheduledNotification(Base):
     repeat_daily = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+@handle_exceptions("資料庫初始化失敗")
 def init_db():
-    Base.metadata.create_all(bind=engine)
+    """初始化資料庫"""
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ 資料庫表格建立成功")
+    except Exception as e:
+        logger.error(f"❌ 資料庫初始化失敗: {e}")
+        raise
 
+@handle_exceptions("訊息儲存失敗")
 def save_message(sender_id: str, role: str, content: str):
-    db = SessionLocal()
+    """儲存訊息並保持最新10條記錄"""
     try:
-        message = Message(sender_id=sender_id, role=role, content=content)
-        db.add(message)
-        db.commit()
-        messages = db.query(Message).filter(Message.sender_id == sender_id).order_by(Message.timestamp.desc()).offset(10).all()
-        for m in messages:
-            db.delete(m)
-        db.commit()
-    finally:
-        db.close()
+        with get_db_session() as session:
+            message = Message(sender_id=sender_id, role=role, content=content)
+            session.add(message)
+            session.flush()  # 確保訊息已保存
+            
+            # 清理舊訊息，只保留最新10條
+            old_messages = session.query(Message).filter(
+                Message.sender_id == sender_id
+            ).order_by(Message.timestamp.desc()).offset(10).all()
+            
+            for msg in old_messages:
+                session.delete(msg)
+            
+            logger.debug(f"為用戶 {sender_id} 儲存訊息，清理了 {len(old_messages)} 條舊記錄")
+    except Exception as e:
+        logger.error(f"儲存訊息失敗: {e}")
 
-def get_history(sender_id: str):
-    db = SessionLocal()
+@handle_exceptions("訊息歷史取得失敗", reraise=False)
+def get_history(sender_id: str) -> List[dict]:
+    """取得對話歷史"""
     try:
-        messages = db.query(Message).filter(Message.sender_id == sender_id).order_by(Message.timestamp.asc()).all()
-        return [{"role": m.role, "content": m.content} for m in messages]
-    finally:
-        db.close()
+        with get_db_session() as session:
+            messages = session.query(Message).filter(
+                Message.sender_id == sender_id
+            ).order_by(Message.timestamp.asc()).all()
+            
+            return [{"role": m.role, "content": m.content} for m in messages]
+    except Exception as e:
+        logger.error(f"取得歷史記錄失敗: {e}")
+        return []
 
+@handle_exceptions("清除歷史失敗")
 def clear_history(sender_id: str):
-    db = SessionLocal()
+    """清除對話歷史"""
     try:
-        db.query(Message).filter(Message.sender_id == sender_id).delete()
-        db.commit()
-    finally:
-        db.close()
+        with get_db_session() as session:
+            deleted_count = session.query(Message).filter(
+                Message.sender_id == sender_id
+            ).delete()
+            logger.info(f"清除了用戶 {sender_id} 的 {deleted_count} 條歷史記錄")
+    except Exception as e:
+        logger.error(f"清除歷史失敗: {e}")
 
 def set_silent(sender_id: str):
     db = SessionLocal()
