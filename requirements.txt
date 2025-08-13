@@ -1,7 +1,6 @@
 fastapi
 uvicorn
 line-bot-sdk
-line-bot-sdk[v3]
 google-generativeai
 requests
 python-dotenv

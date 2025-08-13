@@ -2,7 +2,6 @@
 from linebot import LineBotApi, WebhookHandler
 from linebot.models import MessageEvent, TextMessage, LocationMessage, TextSendMessage, QuickReply, QuickReplyButton, MessageAction
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
-from linebot.v3.messaging import AsyncMessagingApi, Configuration, AsyncApiClient, ShowLoadingAnimationRequest
 from app.realtime_search import needs_realtime_info, get_realtime_info
 from app.gemini_engine import query_gemini
 from app.memory import (
@@ -24,11 +23,6 @@ import threading
 
 logger = setup_logger("line_bot")
 line_bot_api = LineBotApi(config.LINE_CHANNEL_ACCESS_TOKEN)
-
-# LINE Bot SDK v3 配置
-configuration = Configuration(access_token=config.LINE_CHANNEL_ACCESS_TOKEN)
-async_api_client = AsyncApiClient(configuration)
-line_bot_api_v3 = AsyncMessagingApi(async_api_client)
 
 # ==== 基本工具 ====
 @handle_exceptions("⚠️ 訊息推送失敗")
@@ -98,7 +92,7 @@ def safe_reply(event, message: str):
 
 def show_loading_animation(chat_id: str, duration: int = None):
     """
-    顯示 Loading 動畫 (正在輸入指示器)
+    顯示 Loading 動畫 (正在輸入指示器) - 簡化版本
     
     Args:
         chat_id: 聊天室ID (用戶ID或群組ID)
@@ -115,27 +109,39 @@ def show_loading_animation(chat_id: str, duration: int = None):
     duration = max(5, min(duration, 60))
     
     try:
-        # 使用線程來處理異步操作，避免阻塞主執行緒
-        import threading
-        
-        def run_loading_animation():
+        def send_loading_request():
             try:
-                import asyncio
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
+                import requests
                 
-                loading_request = ShowLoadingAnimationRequest(
-                    chatId=chat_id, 
-                    loadingSeconds=duration
-                )
-                loop.run_until_complete(line_bot_api_v3.show_loading_animation(loading_request))
-                loop.close()
-                logger.info(f"已向 {chat_id} 顯示 Loading 動畫 ({duration}秒)")
+                # LINE Messaging API v2 endpoint for loading animation
+                url = "https://api.line.me/v2/bot/chat/loading/start"
+                
+                headers = {
+                    "Authorization": f"Bearer {config.LINE_CHANNEL_ACCESS_TOKEN}",
+                    "Content-Type": "application/json"
+                }
+                
+                payload = {
+                    "chatId": chat_id,
+                    "loadingSeconds": duration
+                }
+                
+                response = requests.post(url, headers=headers, json=payload, timeout=5)
+                
+                if response.status_code == 200:
+                    logger.info(f"已向 {chat_id} 顯示 Loading 動畫 ({duration}秒)")
+                elif response.status_code == 202:
+                    logger.info(f"Loading 動畫請求已接受 - {chat_id} ({duration}秒)")
+                else:
+                    logger.warning(f"Loading 動畫請求失敗: {response.status_code}")
+                    
+            except requests.exceptions.Timeout:
+                logger.warning("Loading 動畫請求超時")
             except Exception as e:
                 logger.warning(f"Loading 動畫執行失敗: {e}")
         
         # 在背景執行緒中運行，不阻塞主程序
-        thread = threading.Thread(target=run_loading_animation)
+        thread = threading.Thread(target=send_loading_request)
         thread.daemon = True
         thread.start()
             
