@@ -236,7 +236,8 @@ def handle_events(handler: WebhookHandler):
     @handler.add(MessageEvent, message=TextMessage)
     @rate_limit(calls_per_minute=30)  # 每分鐘最多30次請求
     @handle_exceptions("⚠️ 訊息處理失敗")
-    def handle_message(event):
+    def handle_message(*args, **kwargs):
+        event = args[0]  # 從參數中取得 event
         sender_id = get_sender_id(event)
         user_input = event.message.text.strip()
         
