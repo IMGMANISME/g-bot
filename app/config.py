@@ -2,7 +2,7 @@
 """應用程式配置管理"""
 import os
 from typing import List
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass
 class Config:
@@ -21,7 +21,9 @@ class Config:
     DATABASE_URL: str = os.getenv("DATABASE_URL")
     
     # 應用程式配置
-    MENTION_KEYWORDS: List[str] = os.getenv("MENTION_KEYWORDS", "@G-bot").lower().split(",")
+    MENTION_KEYWORDS: List[str] = field(
+        default_factory=lambda: os.getenv("MENTION_KEYWORDS", "@G-bot").lower().split(",")
+    )
     
     # 地震監控配置
     EARTHQUAKE_CHECK_INTERVAL: int = 30
