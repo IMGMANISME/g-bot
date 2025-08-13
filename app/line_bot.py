@@ -2,6 +2,7 @@
 from linebot import LineBotApi, WebhookHandler
 from linebot.models import MessageEvent, TextMessage, LocationMessage, TextSendMessage, QuickReply, QuickReplyButton, MessageAction
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
+from linebot.v3.messaging import AsyncMessagingApi, Configuration, AsyncApiClient, ShowLoadingAnimationRequest
 from app.realtime_search import needs_realtime_info, get_realtime_info
 from app.gemini_engine import query_gemini
 from app.memory import (
@@ -19,9 +20,15 @@ import re
 import os
 import asyncio
 import time
+import threading
 
 logger = setup_logger("line_bot")
 line_bot_api = LineBotApi(config.LINE_CHANNEL_ACCESS_TOKEN)
+
+# LINE Bot SDK v3 配置
+configuration = Configuration(access_token=config.LINE_CHANNEL_ACCESS_TOKEN)
+async_api_client = AsyncApiClient(configuration)
+line_bot_api_v3 = AsyncMessagingApi(async_api_client)
 
 # ==== 基本工具 ====
 @handle_exceptions("⚠️ 訊息推送失敗")
@@ -89,7 +96,6 @@ def safe_reply(event, message: str):
         except Exception as e:
             print(f"❌ push_message 也失敗：{e}")
 
-@handle_exceptions("⚠️ Loading 動畫失敗")
 def show_loading_animation(chat_id: str, duration: int = None):
     """
     顯示 Loading 動畫 (正在輸入指示器)
@@ -106,18 +112,32 @@ def show_loading_animation(chat_id: str, duration: int = None):
         duration = config.DEFAULT_LOADING_DURATION
     
     try:
-        # LINE Bot API 的 "正在輸入" 指示器
-        line_bot_api.show_loading_animation(chat_id)
-        logger.info(f"已向 {chat_id} 顯示 Loading 動畫")
+        # 使用線程來處理異步操作，避免阻塞主執行緒
+        import threading
         
-        # 可以在這裡添加額外的延遲邏輯
-        if duration > 0:
-            time.sleep(min(duration, config.MAX_LOADING_DURATION))
+        def run_loading_animation():
+            try:
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                loading_request = ShowLoadingAnimationRequest(
+                    chatId=chat_id, 
+                    loadingSeconds=min(duration, config.MAX_LOADING_DURATION)
+                )
+                loop.run_until_complete(line_bot_api_v3.show_loading_animation(loading_request))
+                loop.close()
+                logger.info(f"已向 {chat_id} 顯示 Loading 動畫 ({duration}秒)")
+            except Exception as e:
+                logger.warning(f"Loading 動畫執行失敗: {e}")
+        
+        # 在背景執行緒中運行，不阻塞主程序
+        thread = threading.Thread(target=run_loading_animation)
+        thread.daemon = True
+        thread.start()
             
-    except LineBotApiError as e:
-        logger.warning(f"顯示 Loading 動畫失敗: {e}")
     except Exception as e:
-        logger.error(f"Loading 動畫處理錯誤: {e}")
+        logger.warning(f"顯示 Loading 動畫失敗: {e}")
 
 @handle_exceptions("⚠️ 非同步回覆失敗")
 def safe_reply_with_loading(event, message: str, processing_time: int = None):
@@ -132,7 +152,7 @@ def safe_reply_with_loading(event, message: str, processing_time: int = None):
     if processing_time is None:
         processing_time = config.DEFAULT_LOADING_DURATION
         
-    chat_id = get_sender_id(event)
+    chat_id = event.source.user_id if hasattr(event.source, 'user_id') else event.source.group_id
     
     # 顯示 Loading 動畫
     show_loading_animation(chat_id, 0)  # 不等待，立即返回
@@ -402,7 +422,8 @@ def handle_reminder_list(event, sender_id: str):
 def handle_restaurant_search(event, sender_id: str, user_input: str):
     """處理餐廳搜尋"""
     # 顯示 Loading 動畫
-    show_loading_animation(get_sender_id(event))
+    chat_id = event.source.user_id if hasattr(event.source, 'user_id') else event.source.group_id
+    show_loading_animation(chat_id)
     
     latlng = get_user_location(sender_id)
     if not latlng:
@@ -442,7 +463,8 @@ def handle_restaurant_search(event, sender_id: str, user_input: str):
 def handle_realtime_query(event, sender_id: str, user_input: str):
     """處理即時資訊查詢"""
     # 顯示 Loading 動畫
-    show_loading_animation(get_sender_id(event))
+    chat_id = event.source.user_id if hasattr(event.source, 'user_id') else event.source.group_id
+    show_loading_animation(chat_id)
     
     try:
         realtime_info = get_realtime_info(user_input)
@@ -466,7 +488,8 @@ def handle_realtime_query(event, sender_id: str, user_input: str):
 def handle_gemini_conversation(event, sender_id: str, user_input: str):
     """處理 Gemini 對話"""
     # 顯示 Loading 動畫
-    show_loading_animation(get_sender_id(event))
+    chat_id = event.source.user_id if hasattr(event.source, 'user_id') else event.source.group_id
+    show_loading_animation(chat_id)
     
     save_message(sender_id, "user", user_input)
     
