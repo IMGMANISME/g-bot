@@ -82,8 +82,8 @@ GOOGLE_MAPS_API_KEY=your_google_maps_api_key
 WEATHER_API_KEY=your_weather_api_key
 MENTION_KEYWORDS=@G-bot
 ENABLE_LOADING_ANIMATION=true
-DEFAULT_LOADING_DURATION=2
-MAX_LOADING_DURATION=5
+DEFAULT_LOADING_DURATION=5
+MAX_LOADING_DURATION=20
 ```
 
 4. **資料庫設定**
@@ -128,8 +128,8 @@ docker run -d \
 | `WEATHER_API_KEY` | 可選 | 天氣 API 金鑰 |
 | `MENTION_KEYWORDS` | 可選 | 標記關鍵字（預設：@G-bot） |
 | `ENABLE_LOADING_ANIMATION` | 可選 | 啟用 Loading 動畫（預設：true） |
-| `DEFAULT_LOADING_DURATION` | 可選 | 預設 Loading 持續時間（秒，預設：2） |
-| `MAX_LOADING_DURATION` | 可選 | 最大 Loading 持續時間（秒，預設：5） |
+| `DEFAULT_LOADING_DURATION` | 可選 | 預設 Loading 持續時間（秒，預設：5，最少5秒） |
+| `MAX_LOADING_DURATION` | 可選 | 最大 Loading 持續時間（秒，預設：20，最多60秒） |
 
 ## 🏗️ 專案架構
 

@@ -102,7 +102,7 @@ def show_loading_animation(chat_id: str, duration: int = None):
     
     Args:
         chat_id: 聊天室ID (用戶ID或群組ID)
-        duration: 動畫持續時間（秒），None 使用預設值
+        duration: 動畫持續時間（秒），None 使用預設值，最少5秒
     """
     # 檢查是否啟用 Loading animation
     if not config.ENABLE_LOADING_ANIMATION:
@@ -110,6 +110,9 @@ def show_loading_animation(chat_id: str, duration: int = None):
         
     if duration is None:
         duration = config.DEFAULT_LOADING_DURATION
+    
+    # LINE API 要求最少 5 秒，最多 60 秒
+    duration = max(5, min(duration, 60))
     
     try:
         # 使用線程來處理異步操作，避免阻塞主執行緒
@@ -123,7 +126,7 @@ def show_loading_animation(chat_id: str, duration: int = None):
                 
                 loading_request = ShowLoadingAnimationRequest(
                     chatId=chat_id, 
-                    loadingSeconds=min(duration, config.MAX_LOADING_DURATION)
+                    loadingSeconds=duration
                 )
                 loop.run_until_complete(line_bot_api_v3.show_loading_animation(loading_request))
                 loop.close()
@@ -147,21 +150,20 @@ def safe_reply_with_loading(event, message: str, processing_time: int = None):
     Args:
         event: LINE 事件物件
         message: 要發送的訊息
-        processing_time: 處理時間（秒），None 使用預設值
+        processing_time: 處理時間（秒），None 使用預設值，最少5秒
     """
     if processing_time is None:
         processing_time = config.DEFAULT_LOADING_DURATION
         
+    # 確保最少 5 秒
+    processing_time = max(5, processing_time)
+    
     chat_id = event.source.user_id if hasattr(event.source, 'user_id') else event.source.group_id
     
-    # 顯示 Loading 動畫
-    show_loading_animation(chat_id, 0)  # 不等待，立即返回
+    # 顯示 Loading 動畫（不等待）
+    show_loading_animation(chat_id, processing_time)
     
-    # 模擬處理時間
-    if processing_time > 0:
-        time.sleep(min(processing_time, config.MAX_LOADING_DURATION))
-    
-    # 發送回覆
+    # 發送回覆（Loading 動畫會在背景運行）
     safe_reply(event, message)
 
 # ==== 快速選單 ====
