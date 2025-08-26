@@ -3,79 +3,197 @@ import requests
 import os
 import asyncio
 from datetime import datetime, timedelta
+from typing import Optional
 
 from app.line_bot import push_line_message_to_users
 from app.memory import SessionLocal, UserState
+from app.config import config
+from app.utils.logger import setup_logger
+from app.utils.decorators import handle_exceptions
 
+logger = setup_logger("earthquake")
 CWA_API_KEY = os.getenv("CWA_API_KEY")
-LAST_EARTHQUAKE_ID = None
+LAST_EARTHQUAKE_ID: Optional[str] = None
 
 
-async def earthquake_checker(interval: int = 30, min_magnitude: float = 5.0):
+def parse_earthquake_data(latest: dict) -> tuple[Optional[float], Optional[datetime], Optional[str]]:
+    """解析地震資料"""
+    try:
+        magnitude = float(latest["EarthquakeInfo"]["EarthquakeMagnitude"]["MagnitudeValue"])
+    except (ValueError, KeyError, TypeError):
+        magnitude = None
+    
+    try:
+        time_str = latest["EarthquakeInfo"]["OriginTime"]
+        dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
+    except (KeyError, ValueError, TypeError):
+        dt = None
+    
+    try:
+        location = latest["EarthquakeInfo"]["Epicenter"]["Location"]
+    except (KeyError, TypeError):
+        location = None
+    
+    return magnitude, dt, location
+
+def is_recent_earthquake(earthquake_time: datetime, interval: int) -> bool:
+    """檢查地震是否為最近發生的"""
+    if not earthquake_time:
+        return False
+    
+    now = datetime.utcnow() + timedelta(hours=8)  # 台灣時間
+    time_diff = abs((now - earthquake_time).total_seconds())
+    return time_diff <= interval
+
+def create_earthquake_message(magnitude: float, earthquake_time: datetime, location: str) -> str:
+    """建立地震推播訊息"""
+    return (
+        f"🌍【地震速報】\n\n"
+        f"📍 震央：{location}\n"
+        f"⏰ 時間：{earthquake_time.strftime('%m/%d %H:%M')}\n"
+        f"💥 規模：{magnitude}級"
+    )
+
+@handle_exceptions("地震API請求失敗")
+def fetch_earthquake_data() -> Optional[dict]:
+    """取得地震資料"""
+    if not CWA_API_KEY:
+        logger.error("CWA_API_KEY 環境變數未設定")
+        return None
+    
+    try:
+        url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0015-001"
+        params = {"Authorization": CWA_API_KEY}
+        
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        earthquakes = data.get("records", {}).get("Earthquake", [])
+        
+        if not earthquakes:
+            logger.debug("目前沒有地震資料")
+            return None
+            
+        return earthquakes[0]
+        
+    except requests.exceptions.Timeout:
+        logger.warning("地震API請求超時")
+        return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"地震API請求失敗: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"解析地震資料失敗: {e}")
+        return None
+
+def get_all_user_ids() -> list[str]:
+    """取得所有用戶ID"""
+    try:
+        with SessionLocal() as db:
+            users = db.query(UserState).all()
+            return [user.sender_id for user in users]
+    except Exception as e:
+        logger.error(f"取得用戶列表失敗: {e}")
+        return []
+async def earthquake_checker(interval: int = 30, min_magnitude: float = 1.0):
     """
-    interval: 幾秒檢查一次
-    min_magnitude: 達到此規模以上才推播
+    地震監控主函數
+    
+    Args:
+        interval: 檢查間隔（秒）
+        min_magnitude: 推播的最小地震規模
     """
-    print("✅ Async Earthquake Checker started.")
-    print(f"⏱️ Interval: {interval} seconds")
-    print(f"🌍 Minimum Magnitude: {min_magnitude}")
     global LAST_EARTHQUAKE_ID
+    
+    logger.info("✅ 地震監控系統啟動")
+    logger.info(f"⏱️ 檢查間隔: {interval} 秒")
+    logger.info(f"🌍 最小規模: {min_magnitude}")
+    
+    if not CWA_API_KEY:
+        logger.error("❌ CWA_API_KEY 未設定，地震監控無法啟動")
+        return
 
     while True:
         try:
-            url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0015-001"
-            params = {"Authorization": CWA_API_KEY}
-            res = requests.get(url, params=params, timeout=10)
-            data = res.json()
-
-            earthquakes = data.get("records", {}).get("Earthquake", [])
-            if not earthquakes:
+            # 取得最新地震資料
+            latest_earthquake = fetch_earthquake_data()
+            if not latest_earthquake:
                 await asyncio.sleep(interval)
                 continue
 
-            latest = earthquakes[0]
-            eq_id = latest.get("EarthquakeNo")
+            # 檢查是否為新地震
+            eq_id = latest_earthquake.get("EarthquakeNo")
+            if eq_id == LAST_EARTHQUAKE_ID:
+                await asyncio.sleep(interval)
+                continue
 
-            if eq_id != LAST_EARTHQUAKE_ID:
-                # 檢查地震規模是否符合
-                try:
-                    magnitude = float(latest["EarthquakeInfo"]["EarthquakeMagnitude"]["MagnitudeValue"])
-                except (ValueError, KeyError):
-                    magnitude = 0.0
+            # 解析地震資料
+            magnitude, earthquake_time, location = parse_earthquake_data(latest_earthquake)
+            
+            # 驗證資料完整性
+            if not all([magnitude, earthquake_time, location]):
+                logger.warning(f"地震資料不完整，跳過處理: EQ_ID={eq_id}")
+                LAST_EARTHQUAKE_ID = eq_id
+                await asyncio.sleep(interval)
+                continue
 
-                if magnitude >= min_magnitude:
-                    # 解析地震時間
-                    try:
-                        time_str = latest["EarthquakeInfo"]["OriginTime"]
-                        dt = datetime.strptime(time_str, "%Y-%m-%d %H:%M:%S")
-                    except (KeyError, ValueError):
-                        dt = None
+            # 檢查規模是否達到推播標準
+            if magnitude < min_magnitude:
+                logger.debug(f"地震規模 {magnitude} 未達推播標準 {min_magnitude}")
+                LAST_EARTHQUAKE_ID = eq_id
+                await asyncio.sleep(interval)
+                continue
 
-                    # 只在地震時間與目前時間差值小於1分鐘內才推播
-                    now = datetime.utcnow() + timedelta(hours=8)  # 台灣時間
-                    if dt and abs((now - dt).total_seconds()) <= interval:
-                        LAST_EARTHQUAKE_ID = eq_id
+            # 檢查是否為近期地震
+            if not is_recent_earthquake(earthquake_time, interval):
+                logger.debug(f"地震時間過舊，不推播: {earthquake_time}")
+                LAST_EARTHQUAKE_ID = eq_id
+                await asyncio.sleep(interval)
+                continue
 
-                        location = latest["EarthquakeInfo"]["Epicenter"]["Location"]
+            # 更新最後處理的地震ID
+            LAST_EARTHQUAKE_ID = eq_id
 
-                        message = (
-                            f"🌍【地震速報】\n\n"
-                            f"📍 震央：{location}\n"
-                            f"⏰ 時間：{dt.strftime('%m/%d %H:%M')}\n"
-                            f"💥 規模：{magnitude}級"
-                        )
-
-                        db = SessionLocal()
-                        try:
-                            users = db.query(UserState).all()
-                            user_ids = [u.sender_id for u in users]
-                        finally:
-                            db.close()
-
-                        print(f"地震推播：{message}")
-                        push_line_message_to_users(message, user_ids)
+            # 建立推播訊息
+            message = create_earthquake_message(magnitude, earthquake_time, location)
+            
+            # 取得用戶列表並推播
+            user_ids = get_all_user_ids()
+            if user_ids:
+                logger.info(f"🚨 地震推播: 規模 {magnitude}，推送給 {len(user_ids)} 位用戶")
+                push_line_message_to_users(message, user_ids)
+            else:
+                logger.warning("沒有用戶可推播地震訊息")
 
         except Exception as e:
-            print(f"地震推播錯誤：{e}")
+            logger.error(f"地震監控發生錯誤: {e}")
 
         await asyncio.sleep(interval)
+
+def validate_earthquake_config() -> bool:
+    """驗證地震監控配置"""
+    if not CWA_API_KEY:
+        logger.error("❌ CWA_API_KEY 環境變數未設定")
+        return False
+    
+    try:
+        # 測試 API 連接
+        url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0015-001"
+        params = {"Authorization": CWA_API_KEY}
+        response = requests.get(url, params=params, timeout=5)
+        
+        if response.status_code == 200:
+            logger.info("✅ 地震API連接測試成功")
+            return True
+        else:
+            logger.error(f"❌ 地震API連接測試失敗: {response.status_code}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ 地震API連接測試失敗: {e}")
+        return False
+
+# 在模組載入時驗證配置
+if __name__ == "__main__":
+    validate_earthquake_config()

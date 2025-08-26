@@ -36,7 +36,7 @@ def push_line_message_to_users(message: str, user_ids: list[str]):
         except Exception as e:
             logger.error(f"推送失敗給用戶 {uid}: {e}")
 
-def get_user_states_cn(sender_id: str):
+def get_user_states_cn(sender_id: str) -> str:
     """獲取用戶狀態的中文描述"""
     status = get_user_state(sender_id)
     status_map = {
@@ -46,16 +46,9 @@ def get_user_states_cn(sender_id: str):
         "silent_mention": "靜音跟標記我模式都開啟中～取消靜音後也只有在被標記時才會回覆！"
     }
     return status_map.get(status, "罷工中～請稍後再試！")
-    """判斷是否應該處理此訊息"""
-    if event.source.type == "group":
-        if "mention" in get_user_state(sender_id):
-            return lowered.lower().replace(config.MENTION_KEYWORDS[0], "").strip()
-        else:
-            return lowered
-    else:
-        return lowered
 
 def get_sender_id(event) -> str:
+    """取得發送者 ID"""
     source = event.source
     if source.type == 'user':
         return source.user_id
@@ -64,6 +57,16 @@ def get_sender_id(event) -> str:
     elif source.type == 'room':
         return source.room_id
     return "unknown"
+
+def get_chat_id(event) -> str:
+    """統一取得 chat_id 的函數"""
+    if hasattr(event.source, 'user_id'):
+        return event.source.user_id
+    elif hasattr(event.source, 'group_id'):
+        return event.source.group_id
+    elif hasattr(event.source, 'room_id'):
+        return event.source.room_id
+    return get_sender_id(event)
 
 def clean_markdown_for_line(text: str) -> str:
     text = re.sub(r'^\* ', '• ', text, flags=re.MULTILINE)
@@ -82,130 +85,80 @@ def remove_repetitive_messages(messages: list) -> list:
     return cleaned
 
 def safe_reply(event, message: str, stop_loading: bool = True):
+    """安全的回覆函數，包含錯誤處理和 loading 動畫停止"""
     try:
         # 停止 loading 動畫
         if stop_loading:
-            chat_id = event.source.user_id if hasattr(event.source, 'user_id') else event.source.group_id
+            chat_id = get_chat_id(event)
             stop_loading_animation(chat_id)
         
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))
+        logger.debug(f"成功回覆訊息給 {get_sender_id(event)}")
     except Exception as e:
-        print("⚠️ reply_message 失敗，改用推播")
+        logger.warning(f"reply_message 失敗，改用推播: {e}")
         try:
             line_bot_api.push_message(get_sender_id(event), TextSendMessage(text=message))
-        except Exception as e:
-            print(f"❌ push_message 也失敗：{e}")
+            logger.info(f"推播訊息成功給 {get_sender_id(event)}")
+        except Exception as push_error:
+            logger.error(f"push_message 也失敗：{push_error}")
+
+def _send_loading_request(url: str, payload: dict, action_name: str):
+    """統一的 loading 動畫請求發送函數"""
+    try:
+        headers = {
+            "Authorization": f"Bearer {config.LINE_CHANNEL_ACCESS_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(url, headers=headers, json=payload, timeout=5)
+        
+        if response.status_code in [200, 202]:
+            logger.info(f"{action_name}成功 - chat_id: {payload.get('chatId')}")
+        else:
+            logger.warning(f"{action_name}失敗: {response.status_code}")
+            
+    except requests.exceptions.Timeout:
+        logger.warning(f"{action_name}請求超時")
+    except Exception as e:
+        logger.warning(f"{action_name}執行失敗: {e}")
 
 def show_loading_animation(chat_id: str):
-    """
-    顯示 Loading 動畫 (正在輸入指示器) - 持續顯示版本
-    
-    Args:
-        chat_id: 聊天室ID (用戶ID或群組ID)
-    """
-    # 檢查是否啟用 Loading animation
+    """顯示 Loading 動畫 (正在輸入指示器)"""
     if not config.ENABLE_LOADING_ANIMATION:
         return
     
-    # 使用 LINE API 允許的最大時間 60 秒
-    duration = 60
+    def send_loading_request():
+        url = "https://api.line.me/v2/bot/chat/loading/start"
+        payload = {
+            "chatId": chat_id,
+            "loadingSeconds": 60  # 使用 LINE API 允許的最大時間
+        }
+        _send_loading_request(url, payload, "Loading 動畫顯示")
     
-    try:
-        def send_loading_request():
-            try:
-                # LINE Messaging API v2 endpoint for loading animation
-                url = "https://api.line.me/v2/bot/chat/loading/start"
-                
-                headers = {
-                    "Authorization": f"Bearer {config.LINE_CHANNEL_ACCESS_TOKEN}",
-                    "Content-Type": "application/json"
-                }
-                
-                payload = {
-                    "chatId": chat_id,
-                    "loadingSeconds": duration
-                }
-                
-                response = requests.post(url, headers=headers, json=payload, timeout=5)
-                
-                if response.status_code == 200:
-                    logger.info(f"已向 {chat_id} 顯示 Loading 動畫 ({duration}秒)")
-                elif response.status_code == 202:
-                    logger.info(f"Loading 動畫請求已接受 - {chat_id} ({duration}秒)")
-                else:
-                    logger.warning(f"Loading 動畫請求失敗: {response.status_code}")
-                    
-            except requests.exceptions.Timeout:
-                logger.warning("Loading 動畫請求超時")
-            except Exception as e:
-                logger.warning(f"Loading 動畫執行失敗: {e}")
-        
-        # 在背景執行緒中運行，不阻塞主程序
-        thread = threading.Thread(target=send_loading_request)
-        thread.daemon = True
-        thread.start()
-            
-    except Exception as e:
-        logger.warning(f"顯示 Loading 動畫失敗: {e}")
+    # 在背景執行緒中運行
+    thread = threading.Thread(target=send_loading_request)
+    thread.daemon = True
+    thread.start()
 
 def stop_loading_animation(chat_id: str):
-    """
-    停止 Loading 動畫
-    
-    Args:
-        chat_id: 聊天室ID (用戶ID或群組ID)
-    """
-    # 檢查是否啟用 Loading animation
+    """停止 Loading 動畫"""
     if not config.ENABLE_LOADING_ANIMATION:
         return
         
-    try:
-        def send_stop_request():
-            try:
-                # LINE Messaging API v2 endpoint for stopping loading animation
-                url = "https://api.line.me/v2/bot/chat/loading/stop"
-                
-                headers = {
-                    "Authorization": f"Bearer {config.LINE_CHANNEL_ACCESS_TOKEN}",
-                    "Content-Type": "application/json"
-                }
-                
-                payload = {
-                    "chatId": chat_id
-                }
-                
-                response = requests.post(url, headers=headers, json=payload, timeout=5)
-                
-                if response.status_code == 200:
-                    logger.info(f"已停止 {chat_id} 的 Loading 動畫")
-                elif response.status_code == 202:
-                    logger.info(f"停止 Loading 動畫請求已接受 - {chat_id}")
-                else:
-                    logger.warning(f"停止 Loading 動畫請求失敗: {response.status_code}")
-                    
-            except requests.exceptions.Timeout:
-                logger.warning("停止 Loading 動畫請求超時")
-            except Exception as e:
-                logger.warning(f"停止 Loading 動畫執行失敗: {e}")
-        
-        # 在背景執行緒中運行，不阻塞主程序
-        thread = threading.Thread(target=send_stop_request)
-        thread.daemon = True
-        thread.start()
-            
-    except Exception as e:
-        logger.warning(f"停止 Loading 動畫失敗: {e}")
+    def send_stop_request():
+        url = "https://api.line.me/v2/bot/chat/loading/stop"
+        payload = {"chatId": chat_id}
+        _send_loading_request(url, payload, "Loading 動畫停止")
+    
+    # 在背景執行緒中運行
+    thread = threading.Thread(target=send_stop_request)
+    thread.daemon = True
+    thread.start()
 
 @handle_exceptions("⚠️ 非同步回覆失敗")
 def safe_reply_with_loading(event, message: str):
-    """
-    帶有 Loading 動畫的安全回覆
-    
-    Args:
-        event: LINE 事件物件
-        message: 要發送的訊息
-    """
-    chat_id = event.source.user_id if hasattr(event.source, 'user_id') else event.source.group_id
+    """帶有 Loading 動畫的安全回覆"""
+    chat_id = get_chat_id(event)
     
     # 顯示 Loading 動畫（不等待）
     show_loading_animation(chat_id)
@@ -214,50 +167,57 @@ def safe_reply_with_loading(event, message: str):
     safe_reply(event, message)
 
 # ==== 快速選單 ====
+def create_quick_reply_buttons(items: list) -> QuickReply:
+    """建立快速回覆按鈕"""
+    buttons = [QuickReplyButton(action=MessageAction(label=label, text=text)) 
+               for label, text in items]
+    return QuickReply(items=buttons)
+
 def handle_quick_intro(event, line_bot_api, sender_id):
-    if event.source.type == "group":
-        if "mention" in get_user_state(sender_id):
-            msg = TextSendMessage(
-                text="請選擇你想做的事 👇",
-                quick_reply=QuickReply(items=[
-                    QuickReplyButton(action=MessageAction(label="幫助", text="#幫助")),
-                    QuickReplyButton(action=MessageAction(label="功能", text="#功能")),
-                    QuickReplyButton(action=MessageAction(label="選單", text="#選單")),
-                    QuickReplyButton(action=MessageAction(label="吃什麼？", text="@G-bot 吃什麼?")),
-                    QuickReplyButton(action=MessageAction(label="我的提醒", text="@G-bot 我的提醒"))
-                ])
-            )
+    """處理快速介紹選單"""
+    state = get_user_state(sender_id)
+    source_type = event.source.type
+    
+    # 根據狀態和來源類型決定按鈕
+    base_items = [
+        ("幫助", "#幫助"),
+        ("功能", "#功能"),
+        ("選單", "#選單")
+    ]
+    
+    if source_type == "group":
+        if "mention" in state:
+            items = base_items + [
+                ("吃什麼？", "@G-bot 吃什麼?"),
+                ("我的提醒", "@G-bot 我的提醒")
+            ]
         else:
-            msg = TextSendMessage(
-                text="請選擇你想做的事 👇",
-                quick_reply=QuickReply(items=[
-                    QuickReplyButton(action=MessageAction(label="幫助", text="#幫助")),
-                    QuickReplyButton(action=MessageAction(label="功能", text="#功能")),
-                    QuickReplyButton(action=MessageAction(label="選單", text="#選單")),
-                    QuickReplyButton(action=MessageAction(label="吃什麼？", text="@G-bot 吃什麼?")),
-                    QuickReplyButton(action=MessageAction(label="我的提醒", text="我的提醒"))
-                ])
-            )
+            items = base_items + [
+                ("吃什麼？", "@G-bot 吃什麼?"),
+                ("我的提醒", "我的提醒")
+            ]
     else:
-        msg = TextSendMessage(
-                text="請選擇你想做的事 👇",
-                quick_reply=QuickReply(items=[
-                    QuickReplyButton(action=MessageAction(label="幫助", text="#幫助")),
-                    QuickReplyButton(action=MessageAction(label="功能", text="#功能")),
-                    QuickReplyButton(action=MessageAction(label="選單", text="#選單")),
-                    QuickReplyButton(action=MessageAction(label="吃什麼？", text="吃什麼?")),
-                    QuickReplyButton(action=MessageAction(label="我的提醒", text="我的提醒"))
-                ])
-            )
+        items = base_items + [
+            ("吃什麼？", "吃什麼?"),
+            ("我的提醒", "我的提醒")
+        ]
+    
+    msg = TextSendMessage(
+        text="請選擇你想做的事 👇",
+        quick_reply=create_quick_reply_buttons(items)
+    )
+    
     try:
         line_bot_api.reply_message(event.reply_token, msg)
     except Exception as e:
-        print(f"⚠️ quick reply 失敗：{e}")
+        logger.error(f"快速介紹選單回覆失敗：{e}")
 
 def handle_quick_help(event, line_bot_api, sender_id):
-    if event.source.type == "group":
-        msg = TextSendMessage(
-            text="🛠️ 可用指令：\n"
+    """處理快速說明選單"""
+    source_type = event.source.type
+    
+    if source_type == "group":
+        help_text = ("🛠️ 可用指令：\n"
                     "• #選單 - 出示選單\n"
                     "• #狀態 - 查看目前回話狀態\n"
                     "• #功能 - 查看相關功能\n"
@@ -265,40 +225,34 @@ def handle_quick_help(event, line_bot_api, sender_id):
                     "• #說話 - 恢復回應\n"
                     "• #標記 - 只在被標記時回覆\n"
                     "• #都回 - 會回覆所有訊息\n"
-                    "• #幫助 - 顯示說明",
-            quick_reply=QuickReply(items=[
-                QuickReplyButton(action=MessageAction(label="選單", text="#選單")),
-                QuickReplyButton(action=MessageAction(label="狀態", text="#狀態")),
-                QuickReplyButton(action=MessageAction(label="功能", text="#功能")),
-                QuickReplyButton(action=MessageAction(label="安靜", text="#安靜")),
-                QuickReplyButton(action=MessageAction(label="說話", text="#說話")),
-                QuickReplyButton(action=MessageAction(label="標記", text="#標記")),
-                QuickReplyButton(action=MessageAction(label="都回", text="#都回")),
-                QuickReplyButton(action=MessageAction(label="幫助", text="#幫助"))
-            ])
-        )
+                    "• #幫助 - 顯示說明")
+        items = [
+            ("選單", "#選單"), ("狀態", "#狀態"), ("功能", "#功能"),
+            ("安靜", "#安靜"), ("說話", "#說話"), ("標記", "#標記"),
+            ("都回", "#都回"), ("幫助", "#幫助")
+        ]
     else:
-        msg = TextSendMessage(
-                text="🛠️ 可用指令：\n"
+        help_text = ("🛠️ 可用指令：\n"
                     "• #選單 - 出示選單\n"
                     "• #狀態 - 查看目前回話狀態\n"
                     "• #功能 - 查看相關功能\n"
                     "• #安靜 - 停止對話\n"
                     "• #說話 - 恢復回應\n"
-                    "• #幫助 - 顯示說明",
-                quick_reply=QuickReply(items=[
-                    QuickReplyButton(action=MessageAction(label="選單", text="#選單")),
-                    QuickReplyButton(action=MessageAction(label="狀態", text="#狀態")),
-                    QuickReplyButton(action=MessageAction(label="功能", text="#功能")),
-                    QuickReplyButton(action=MessageAction(label="安靜", text="#安靜")),
-                    QuickReplyButton(action=MessageAction(label="說話", text="#說話")),
-                    QuickReplyButton(action=MessageAction(label="幫助", text="#幫助"))
-                ])
-            )
+                    "• #幫助 - 顯示說明")
+        items = [
+            ("選單", "#選單"), ("狀態", "#狀態"), ("功能", "#功能"),
+            ("安靜", "#安靜"), ("說話", "#說話"), ("幫助", "#幫助")
+        ]
+    
+    msg = TextSendMessage(
+        text=help_text,
+        quick_reply=create_quick_reply_buttons(items)
+    )
+    
     try:
         line_bot_api.reply_message(event.reply_token, msg)
     except Exception as e:
-        print(f"⚠️ quick reply 失敗：{e}")
+        logger.error(f"快速說明選單回覆失敗：{e}")
 
 # ==== 指令處理 ====
 def parse_natural_reminder(text: str):
@@ -471,7 +425,7 @@ def handle_reminder_list(event, sender_id: str):
 def handle_restaurant_search(event, sender_id: str, user_input: str):
     """處理餐廳搜尋"""
     # 顯示 Loading 動畫
-    chat_id = event.source.user_id if hasattr(event.source, 'user_id') else event.source.group_id
+    chat_id = get_chat_id(event)
     show_loading_animation(chat_id)
     
     latlng = get_user_location(sender_id)
@@ -512,7 +466,7 @@ def handle_restaurant_search(event, sender_id: str, user_input: str):
 def handle_realtime_query(event, sender_id: str, user_input: str):
     """處理即時資訊查詢"""
     # 顯示 Loading 動畫
-    chat_id = event.source.user_id if hasattr(event.source, 'user_id') else event.source.group_id
+    chat_id = get_chat_id(event)
     show_loading_animation(chat_id)
     
     try:
@@ -537,7 +491,7 @@ def handle_realtime_query(event, sender_id: str, user_input: str):
 def handle_gemini_conversation(event, sender_id: str, user_input: str):
     """處理 Gemini 對話"""
     # 顯示 Loading 動畫
-    chat_id = event.source.user_id if hasattr(event.source, 'user_id') else event.source.group_id
+    chat_id = get_chat_id(event)
     show_loading_animation(chat_id)
     
     save_message(sender_id, "user", user_input)
