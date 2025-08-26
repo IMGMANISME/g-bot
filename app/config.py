@@ -27,7 +27,7 @@ class Config:
     
     # 地震監控配置
     EARTHQUAKE_CHECK_INTERVAL: int = 30
-    EARTHQUAKE_MIN_MAGNITUDE: float = 4.0
+    EARTHQUAKE_MIN_MAGNITUDE: float = 1.0
     
     # Loading Animation 配置
     ENABLE_LOADING_ANIMATION: bool = os.getenv("ENABLE_LOADING_ANIMATION", "true").lower() == "true"
