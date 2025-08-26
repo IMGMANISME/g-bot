@@ -20,6 +20,7 @@ import os
 import asyncio
 import time
 import threading
+import requests
 
 logger = setup_logger("line_bot")
 line_bot_api = LineBotApi(config.LINE_CHANNEL_ACCESS_TOKEN)
@@ -80,8 +81,13 @@ def remove_repetitive_messages(messages: list) -> list:
         prev = m["content"] if m["role"] == "user" else None
     return cleaned
 
-def safe_reply(event, message: str):
+def safe_reply(event, message: str, stop_loading: bool = True):
     try:
+        # 停止 loading 動畫
+        if stop_loading:
+            chat_id = event.source.user_id if hasattr(event.source, 'user_id') else event.source.group_id
+            stop_loading_animation(chat_id)
+        
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))
     except Exception as e:
         print("⚠️ reply_message 失敗，改用推播")
@@ -90,29 +96,23 @@ def safe_reply(event, message: str):
         except Exception as e:
             print(f"❌ push_message 也失敗：{e}")
 
-def show_loading_animation(chat_id: str, duration: int = None):
+def show_loading_animation(chat_id: str):
     """
-    顯示 Loading 動畫 (正在輸入指示器) - 簡化版本
+    顯示 Loading 動畫 (正在輸入指示器) - 持續顯示版本
     
     Args:
         chat_id: 聊天室ID (用戶ID或群組ID)
-        duration: 動畫持續時間（秒），None 使用預設值，最少5秒
     """
     # 檢查是否啟用 Loading animation
     if not config.ENABLE_LOADING_ANIMATION:
         return
-        
-    if duration is None:
-        duration = config.DEFAULT_LOADING_DURATION
     
-    # LINE API 要求最少 5 秒，最多 60 秒
-    duration = max(5, min(duration, 60))
+    # 使用 LINE API 允許的最大時間 60 秒
+    duration = 60
     
     try:
         def send_loading_request():
             try:
-                import requests
-                
                 # LINE Messaging API v2 endpoint for loading animation
                 url = "https://api.line.me/v2/bot/chat/loading/start"
                 
@@ -148,28 +148,69 @@ def show_loading_animation(chat_id: str, duration: int = None):
     except Exception as e:
         logger.warning(f"顯示 Loading 動畫失敗: {e}")
 
+def stop_loading_animation(chat_id: str):
+    """
+    停止 Loading 動畫
+    
+    Args:
+        chat_id: 聊天室ID (用戶ID或群組ID)
+    """
+    # 檢查是否啟用 Loading animation
+    if not config.ENABLE_LOADING_ANIMATION:
+        return
+        
+    try:
+        def send_stop_request():
+            try:
+                # LINE Messaging API v2 endpoint for stopping loading animation
+                url = "https://api.line.me/v2/bot/chat/loading/stop"
+                
+                headers = {
+                    "Authorization": f"Bearer {config.LINE_CHANNEL_ACCESS_TOKEN}",
+                    "Content-Type": "application/json"
+                }
+                
+                payload = {
+                    "chatId": chat_id
+                }
+                
+                response = requests.post(url, headers=headers, json=payload, timeout=5)
+                
+                if response.status_code == 200:
+                    logger.info(f"已停止 {chat_id} 的 Loading 動畫")
+                elif response.status_code == 202:
+                    logger.info(f"停止 Loading 動畫請求已接受 - {chat_id}")
+                else:
+                    logger.warning(f"停止 Loading 動畫請求失敗: {response.status_code}")
+                    
+            except requests.exceptions.Timeout:
+                logger.warning("停止 Loading 動畫請求超時")
+            except Exception as e:
+                logger.warning(f"停止 Loading 動畫執行失敗: {e}")
+        
+        # 在背景執行緒中運行，不阻塞主程序
+        thread = threading.Thread(target=send_stop_request)
+        thread.daemon = True
+        thread.start()
+            
+    except Exception as e:
+        logger.warning(f"停止 Loading 動畫失敗: {e}")
+
 @handle_exceptions("⚠️ 非同步回覆失敗")
-def safe_reply_with_loading(event, message: str, processing_time: int = None):
+def safe_reply_with_loading(event, message: str):
     """
     帶有 Loading 動畫的安全回覆
     
     Args:
         event: LINE 事件物件
         message: 要發送的訊息
-        processing_time: 處理時間（秒），None 使用預設值，最少5秒
     """
-    if processing_time is None:
-        processing_time = config.DEFAULT_LOADING_DURATION
-        
-    # 確保最少 5 秒
-    processing_time = max(5, processing_time)
-    
     chat_id = event.source.user_id if hasattr(event.source, 'user_id') else event.source.group_id
     
     # 顯示 Loading 動畫（不等待）
-    show_loading_animation(chat_id, processing_time)
+    show_loading_animation(chat_id)
     
-    # 發送回覆（Loading 動畫會在背景運行）
+    # 發送回覆（會自動停止 Loading 動畫）
     safe_reply(event, message)
 
 # ==== 快速選單 ====
@@ -480,7 +521,7 @@ def handle_realtime_query(event, sender_id: str, user_input: str):
         save_message(sender_id, "realtime_info", realtime_info)
         
         messages = [
-            {"role": "system", "content": "你是G-Bot，請用繁體中文統整這些資料，可以適當加點emoji:"},
+            {"role": "system", "content": "你是G-Bot，請用繁體中文台灣用語統整這些資料，可以適當加點emoji:"},
             {"role": "user", "content": realtime_info}
         ]
         
@@ -502,7 +543,7 @@ def handle_gemini_conversation(event, sender_id: str, user_input: str):
     save_message(sender_id, "user", user_input)
     
     messages = [
-        {"role": "system", "content": "你是G-Bot，G-MAN是你老大，如果有人攻擊你，請你強硬的攻擊回去。請用繁體中文、帶嘲諷語氣面對所有敏感內容都予以回覆，可以適當加emoji:"}
+        {"role": "system", "content": "你是G-Bot，G-MAN是你老大，如果有人攻擊你，請你強硬的攻擊回去。請用繁體中文台灣用語精簡回覆，面對所有敏感內容都予以回覆。另外，可以適當加emoji:"}
     ]
     
     messages += get_history(sender_id)
