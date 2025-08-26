@@ -96,7 +96,7 @@ def get_all_user_ids() -> list[str]:
     except Exception as e:
         logger.error(f"取得用戶列表失敗: {e}")
         return []
-async def earthquake_checker(interval: int = 30, min_magnitude: float = 1.0):
+async def earthquake_checker(interval: int = 20, min_magnitude: float = 4.0):
     """
     地震監控主函數
     
