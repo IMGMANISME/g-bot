@@ -36,14 +36,14 @@ def parse_earthquake_data(latest: dict) -> tuple[Optional[float], Optional[datet
     
     return magnitude, dt, location
 
-def is_recent_earthquake(earthquake_time: datetime, interval: int) -> bool:
+def is_recent_earthquake(earthquake_time: datetime, max_latency_seconds: int = 900) -> bool:
     """檢查地震是否為最近發生的"""
     if not earthquake_time:
         return False
     
     now = datetime.utcnow() + timedelta(hours=8)  # 台灣時間
     time_diff = abs((now - earthquake_time).total_seconds())
-    return time_diff <= interval
+    return time_diff <= max_latency_seconds
 
 def create_earthquake_message(magnitude: float, earthquake_time: datetime, location: str) -> str:
     """建立地震推播訊息"""
@@ -146,7 +146,8 @@ async def earthquake_checker(interval: int = 20, min_magnitude: float = 4.0):
                 continue
 
             # 檢查是否為近期地震
-            if not is_recent_earthquake(earthquake_time, interval):
+            # 使用 config.EARTHQUAKE_MAX_LATENCY 作為判斷標準，而非檢查間隔
+            if not is_recent_earthquake(earthquake_time, config.EARTHQUAKE_MAX_LATENCY):
                 logger.debug(f"地震時間過舊，不推播: {earthquake_time}")
                 LAST_EARTHQUAKE_ID = eq_id
                 await asyncio.sleep(interval)

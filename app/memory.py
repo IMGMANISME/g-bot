@@ -65,6 +65,13 @@ class UserLocation(Base):
     longitude = Column(String)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+    sender_id = Column(String, primary_key=True)
+    display_name = Column(String)
+    picture_url = Column(String)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class Restaurant(Base):
     __tablename__ = "restaurants"
     place_id = Column(String, primary_key=True)
@@ -237,6 +244,43 @@ def get_user_location(sender_id: str):
         location = db.query(UserLocation).filter_by(sender_id=sender_id).first()
         if location:
             return float(location.latitude), float(location.longitude)
+        return None
+    finally:
+        db.close()
+
+def upsert_user_profile(sender_id: str, display_name: str, picture_url: str = None):
+    """更新或插入用戶個人資料"""
+    db = SessionLocal()
+    try:
+        profile = db.query(UserProfile).filter_by(sender_id=sender_id).first()
+        if not profile:
+            profile = UserProfile(
+                sender_id=sender_id,
+                display_name=display_name,
+                picture_url=picture_url
+            )
+            db.add(profile)
+        else:
+            profile.display_name = display_name
+            if picture_url:
+                profile.picture_url = picture_url
+        db.commit()
+    except Exception as e:
+        logger.error(f"更新用戶資料失敗: {e}")
+    finally:
+        db.close()
+
+def get_cached_user_profile(sender_id: str) -> Optional[dict]:
+    """取得快取的用戶個人資料"""
+    db = SessionLocal()
+    try:
+        profile = db.query(UserProfile).filter_by(sender_id=sender_id).first()
+        if profile:
+            return {
+                "display_name": profile.display_name,
+                "picture_url": profile.picture_url,
+                "updated_at": profile.updated_at
+            }
         return None
     finally:
         db.close()

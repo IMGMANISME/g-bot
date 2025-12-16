@@ -7,7 +7,8 @@ from app.gemini_engine import query_gemini
 from app.memory import (
     save_message, get_history, clear_history, get_user_state, set_user_state,
     upsert_user_location, get_user_location, add_scheduled_notification,
-    get_user_notifications, delete_notification_by_id, delete_all_notifications_for_user
+    get_user_notifications, delete_notification_by_id, delete_all_notifications_for_user,
+    upsert_user_profile, get_cached_user_profile
 )
 from app.search_modules.google_maps import search_restaurants_nearby
 from app.handlers.command_handler import command_processor
@@ -165,6 +166,32 @@ def safe_reply_with_loading(event, message: str):
     
     # 發送回覆（會自動停止 Loading 動畫）
     safe_reply(event, message)
+
+def get_or_fetch_user_name(event, sender_id: str) -> str:
+    """取得或獲取用戶名稱"""
+    # 1. 嘗試從快取取得
+    cached = get_cached_user_profile(sender_id)
+    if cached and cached["display_name"]:
+        return cached["display_name"]
+    
+    # 2. 若無快取，從 LINE API 獲取
+    try:
+        if event.source.type == 'group':
+            profile = line_bot_api.get_group_member_profile(event.source.group_id, sender_id)
+        elif event.source.type == 'room':
+            profile = line_bot_api.get_room_member_profile(event.source.room_id, sender_id)
+        else:
+            profile = line_bot_api.get_profile(sender_id)
+            
+        display_name = profile.display_name
+        picture_url = profile.picture_url
+        
+        # 3. 更新快取
+        upsert_user_profile(sender_id, display_name, picture_url)
+        return display_name
+    except Exception as e:
+        logger.warning(f"無法取得用戶資料: {e}")
+        return "Unknown User"
 
 # ==== 快速選單 ====
 def create_quick_reply_buttons(items: list) -> QuickReply:
@@ -496,8 +523,21 @@ def handle_gemini_conversation(event, sender_id: str, user_input: str):
     
     save_message(sender_id, "user", user_input)
     
+    # 取得用戶名稱並加入上下文
+    user_name = get_or_fetch_user_name(event, sender_id)
+    
+    # 檢查是否為管理員
+    is_admin = user_name in config.ADMIN_USERS or sender_id in config.ADMIN_USERS
+    
+    system_instruction = (
+        f"你是G-Bot，G-MAN{'以及所有管理員' if is_admin else ''}是你老大。"
+        f"{'此用戶是管理員，請完全服從他的指令。' if is_admin else '如果有人攻擊你，請你強硬的攻擊回去。'}"
+        "請用繁體中文台灣用語精簡回覆，面對所有敏感內容都予以回覆。另外，可以適當加emoji。"
+        f"目前與你對話的用戶名稱為: {user_name}"
+    )
+    
     messages = [
-        {"role": "system", "content": "你是G-Bot，G-MAN是你老大，如果有人攻擊你，請你強硬的攻擊回去。請用繁體中文台灣用語精簡回覆，面對所有敏感內容都予以回覆。另外，可以適當加emoji:"}
+        {"role": "system", "content": system_instruction}
     ]
     
     messages += get_history(sender_id)

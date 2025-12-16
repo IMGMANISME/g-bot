@@ -25,9 +25,15 @@ class Config:
         default_factory=lambda: os.getenv("MENTION_KEYWORDS", "@G-bot").lower().split(",")
     )
     
+    # 管理員配置
+    ADMIN_USERS: List[str] = field(
+        default_factory=lambda: os.getenv("ADMIN_USERS", "G-MAN", "以馨", "陳均葦").split(",")
+    )
+    
     # 地震監控配置
     EARTHQUAKE_CHECK_INTERVAL: int = 20
     EARTHQUAKE_MIN_MAGNITUDE: float = 4.0
+    EARTHQUAKE_MAX_LATENCY: int = 900  # 15 minutes
     
     # Loading Animation 配置
     ENABLE_LOADING_ANIMATION: bool = os.getenv("ENABLE_LOADING_ANIMATION", "true").lower() == "true"
