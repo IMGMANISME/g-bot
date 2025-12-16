@@ -348,7 +348,7 @@ def handle_events(handler: WebhookHandler):
         sender_id = get_sender_id(event)
         user_input = event.message.text.strip()
         
-        logger.info(f"收到來自 {sender_id} 的訊息: {user_input[:50]}...")
+        # logger.info(f"收到來自 {sender_id} 的訊息: {user_input[:50]}...")
         
         # 使用新的命令處理器
         command_context = {
