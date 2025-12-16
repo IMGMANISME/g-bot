@@ -27,7 +27,7 @@ class Config:
     
     # 管理員配置
     ADMIN_USERS: List[str] = field(
-        default_factory=lambda: os.getenv("ADMIN_USERS", "G-MAN", "以馨", "陳均葦").split(",")
+        default_factory=lambda: os.getenv("ADMIN_USERS", "G-MAN,以馨,陳均葦").split(",")
     )
     
     # 地震監控配置
