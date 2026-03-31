@@ -11,10 +11,16 @@ logger = setup_logger("line_utils")
 line_bot_api = LineBotApi(config.LINE_CHANNEL_ACCESS_TOKEN)
 
 @handle_exceptions("⚠️ 訊息推送失敗")
-def push_line_message_to_users(message: str, user_ids: list[str]):
+def push_line_message_to_users(message: str, user_ids: list[str], image_url: str = None):
+    from linebot.models import ImageSendMessage
+    
+    messages = [TextSendMessage(text=message)]
+    if image_url:
+        messages.append(ImageSendMessage(original_content_url=image_url, preview_image_url=image_url))
+
     for uid in user_ids:
         try:
-            line_bot_api.push_message(uid, TextSendMessage(text=message))
+            line_bot_api.push_message(uid, messages)
             logger.info(f"成功推送訊息給用戶: {uid}")
         except Exception as e:
             logger.error(f"推送失敗給用戶 {uid}: {e}")

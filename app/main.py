@@ -14,7 +14,7 @@ from linebot.exceptions import InvalidSignatureError
 
 from app.line_bot import handle_events
 from app.database import init_db
-from app.earthquake import earthquake_checker
+from app.earthquake import setup_earthquake_job
 from app.schedule_notification import start_scheduler
 from app.config import config, validate_config
 from app.utils.logger import setup_logger
@@ -42,17 +42,18 @@ async def lifespan(app: FastAPI):
         init_db()
         logger.info("✅ 資料庫初始化完成")
         
-        # 啟動背景任務
-        asyncio.create_task(
-            earthquake_checker(
-                interval=config.EARTHQUAKE_CHECK_INTERVAL, 
-                min_magnitude=config.EARTHQUAKE_MIN_MAGNITUDE
-            )
+        # 註冊地震監控任務至排程器
+        from app.schedule_notification import scheduler
+        setup_earthquake_job(
+            scheduler,
+            interval=config.EARTHQUAKE_CHECK_INTERVAL, 
+            min_magnitude=config.EARTHQUAKE_MIN_MAGNITUDE
         )
-        logger.info("✅ 地震監控任務已啟動")
+        logger.info("✅ 地震監控任務已註冊")
         
+        # 啟動所有排程任務
         start_scheduler()
-        logger.info("✅ 通知排程器已啟動")
+        logger.info("✅ 背景排程器已啟動 (含通知與地震)")
         
         logger.info("🎉 G-Bot 啟動完成！")
         

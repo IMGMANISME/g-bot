@@ -97,81 +97,85 @@ def get_all_user_ids() -> list[str]:
     except Exception as e:
         logger.error(f"取得用戶列表失敗: {e}")
         return []
-async def earthquake_checker(interval: int = 20, min_magnitude: float = 4.0):
+def check_earthquake_job(min_magnitude: float = 4.0):
     """
-    地震監控主函數
-    
-    Args:
-        interval: 檢查間隔（秒）
-        min_magnitude: 推播的最小地震規模
+    執行單次地震檢查作業
     """
     global LAST_EARTHQUAKE_ID
     
-    logger.info("✅ 地震監控系統啟動")
-    logger.info(f"⏱️ 檢查間隔: {interval} 秒")
-    logger.info(f"🌍 最小規模: {min_magnitude}")
-    
+    if not CWA_API_KEY:
+        return
+
+    try:
+        # 取得最新地震資料
+        latest_earthquake = fetch_earthquake_data()
+        if not latest_earthquake:
+            return
+
+        # 檢查是否為新地震
+        eq_id = latest_earthquake.get("EarthquakeNo")
+        if eq_id == LAST_EARTHQUAKE_ID:
+            return
+
+        # 解析獨立的圖片 URL
+        image_url = latest_earthquake.get("ReportImageURI")
+
+        # 解析地震資料
+        magnitude, earthquake_time, location = parse_earthquake_data(latest_earthquake)
+        
+        # 驗證資料完整性
+        if not all([magnitude, earthquake_time, location]):
+            logger.warning(f"地震資料不完整，跳過處理: EQ_ID={eq_id}")
+            LAST_EARTHQUAKE_ID = eq_id
+            return
+
+        # 檢查規模是否達到推播標準
+        if magnitude < min_magnitude:
+            logger.debug(f"地震規模 {magnitude} 未達推播標準 {min_magnitude}")
+            LAST_EARTHQUAKE_ID = eq_id
+            return
+
+        # 檢查是否為近期地震
+        if not is_recent_earthquake(earthquake_time, config.EARTHQUAKE_MAX_LATENCY):
+            logger.debug(f"地震時間過舊，不推播: {earthquake_time}")
+            LAST_EARTHQUAKE_ID = eq_id
+            return
+
+        # 更新最後處理的地震ID
+        LAST_EARTHQUAKE_ID = eq_id
+
+        # 建立推播訊息
+        message = create_earthquake_message(magnitude, earthquake_time, location)
+        
+        # 取得用戶列表並推播 (支援傳遞 image_url)
+        user_ids = get_all_user_ids()
+        if user_ids:
+            logger.info(f"🚨 地震推播: 規模 {magnitude}，推送給 {len(user_ids)} 位用戶")
+            push_line_message_to_users(message, user_ids, image_url=image_url)
+        else:
+            logger.warning("沒有用戶可推播地震訊息")
+
+    except Exception as e:
+        logger.error(f"地震監控發生錯誤: {e}")
+
+def setup_earthquake_job(scheduler, interval: int = 20, min_magnitude: float = 4.0):
+    """註冊地震排程任務至 APScheduler"""
     if not CWA_API_KEY:
         logger.error("❌ CWA_API_KEY 未設定，地震監控無法啟動")
         return
-
-    while True:
-        try:
-            # 取得最新地震資料
-            latest_earthquake = fetch_earthquake_data()
-            if not latest_earthquake:
-                await asyncio.sleep(interval)
-                continue
-
-            # 檢查是否為新地震
-            eq_id = latest_earthquake.get("EarthquakeNo")
-            if eq_id == LAST_EARTHQUAKE_ID:
-                await asyncio.sleep(interval)
-                continue
-
-            # 解析地震資料
-            magnitude, earthquake_time, location = parse_earthquake_data(latest_earthquake)
-            
-            # 驗證資料完整性
-            if not all([magnitude, earthquake_time, location]):
-                logger.warning(f"地震資料不完整，跳過處理: EQ_ID={eq_id}")
-                LAST_EARTHQUAKE_ID = eq_id
-                await asyncio.sleep(interval)
-                continue
-
-            # 檢查規模是否達到推播標準
-            if magnitude < min_magnitude:
-                logger.debug(f"地震規模 {magnitude} 未達推播標準 {min_magnitude}")
-                LAST_EARTHQUAKE_ID = eq_id
-                await asyncio.sleep(interval)
-                continue
-
-            # 檢查是否為近期地震
-            # 使用 config.EARTHQUAKE_MAX_LATENCY 作為判斷標準，而非檢查間隔
-            if not is_recent_earthquake(earthquake_time, config.EARTHQUAKE_MAX_LATENCY):
-                logger.debug(f"地震時間過舊，不推播: {earthquake_time}")
-                LAST_EARTHQUAKE_ID = eq_id
-                await asyncio.sleep(interval)
-                continue
-
-            # 更新最後處理的地震ID
-            LAST_EARTHQUAKE_ID = eq_id
-
-            # 建立推播訊息
-            message = create_earthquake_message(magnitude, earthquake_time, location)
-            
-            # 取得用戶列表並推播
-            user_ids = get_all_user_ids()
-            if user_ids:
-                logger.info(f"🚨 地震推播: 規模 {magnitude}，推送給 {len(user_ids)} 位用戶")
-                push_line_message_to_users(message, user_ids)
-            else:
-                logger.warning("沒有用戶可推播地震訊息")
-
-        except Exception as e:
-            logger.error(f"地震監控發生錯誤: {e}")
-
-        await asyncio.sleep(interval)
+        
+    logger.info("✅ 註冊地震監控排程作業")
+    logger.info(f"⏱️ 檢查間隔: {interval} 秒")
+    logger.info(f"🌍 最小規模: {min_magnitude}")
+    
+    scheduler.add_job(
+        check_earthquake_job,
+        'interval',
+        seconds=interval,
+        kwargs={"min_magnitude": min_magnitude},
+        id='earthquake_checker',
+        replace_existing=True
+    )
 
 def validate_earthquake_config() -> bool:
     """驗證地震監控配置"""
