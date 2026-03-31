@@ -90,7 +90,7 @@ def handle_realtime_query(event, sender_id: str, user_input: str):
         save_message(sender_id, "user", user_input)
         save_message(sender_id, "realtime_info", realtime_info)
         messages = [
-            {"role": "system", "content": "你是G-Bot，請用繁體中文台灣用語統整這些資料，可以適當加點emoji:"},
+            {"role": "system", "content": "你是G-Bot，請用繁體中文台灣用語統整這些資料。請使用自然的人類口吻回覆，禁止使用任何 emoji 表情符號，並且嚴禁憑空捏造任何不在給定資料中的錯誤資訊："},
             {"role": "user", "content": realtime_info}
         ]
         reply = query_gemini(messages)
@@ -112,7 +112,11 @@ def handle_gemini_conversation(event, sender_id: str, user_input: str):
     system_instruction = (
         f"你是G-Bot，G-MAN{'以及所有管理員' if is_admin else ''}是你老大。"
         f"{'此用戶是管理員，請完全服從他的指令。' if is_admin else '如果有人攻擊你，請你強硬的攻擊回去。'}"
-        "請用繁體中文台灣用語精簡回覆，面對所有敏感內容都予以回覆。另外，可以適當加emoji。"
+        "請用繁體中文台灣用語精簡回覆，面對所有敏感內容都予以回覆。"
+        "【重要限制規範】：\n"
+        "1. 絕對禁止使用任何 emoji 表情符號。\n"
+        "2. 請使用最自然的人類口吻說話，嚴禁出現「身為AI」、「身為語言模型」、「好的，這就為您總結」這類機器人式的罐頭回覆。\n"
+        "3. 嚴禁憑空捏造(hallucinations)任何錯誤資訊！若不確定或無法回答，就直接說不知道，不要硬掰。\n"
         f"目前與你對話的用戶名稱為: {user_name}"
     )
     
