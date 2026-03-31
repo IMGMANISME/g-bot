@@ -85,14 +85,9 @@ def remove_repetitive_messages(messages: list) -> list:
         prev = m["content"] if m["role"] == "user" else None
     return cleaned
 
-def safe_reply(event, message: str, stop_loading: bool = True):
-    """安全的回覆函數，包含錯誤處理和 loading 動畫停止"""
+def safe_reply(event, message: str):
+    """安全的回覆函數，包含錯誤處理"""
     try:
-        # 停止 loading 動畫
-        if stop_loading:
-            chat_id = get_chat_id(event)
-            stop_loading_animation(chat_id)
-        
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))
         logger.debug(f"成功回覆訊息給 {get_sender_id(event)}")
     except Exception as e:
@@ -141,20 +136,6 @@ def show_loading_animation(chat_id: str):
     thread.daemon = True
     thread.start()
 
-def stop_loading_animation(chat_id: str):
-    """停止 Loading 動畫"""
-    if not config.ENABLE_LOADING_ANIMATION:
-        return
-        
-    def send_stop_request():
-        url = "https://api.line.me/v2/bot/chat/loading/stop"
-        payload = {"chatId": chat_id}
-        _send_loading_request(url, payload, "Loading 動畫停止")
-    
-    # 在背景執行緒中運行
-    thread = threading.Thread(target=send_stop_request)
-    thread.daemon = True
-    thread.start()
 
 @handle_exceptions("⚠️ 非同步回覆失敗")
 def safe_reply_with_loading(event, message: str):
