@@ -136,15 +136,31 @@ docker run -d \
 ```
 app/
 ├── main.py                 # FastAPI 主應用程式
-├── config.py              # 配置管理
-├── line_bot.py            # LINE Bot 事件處理
-├── gemini_engine.py       # Gemini AI 整合
-├── memory.py              # 資料庫模型與操作
-├── realtime_search.py     # 即時資訊查詢
-├── earthquake.py          # 地震監控
-├── schedule_notification.py # 通知排程
-├── handlers/
-│   └── command_handler.py # 命令處理器
+├── database.py             # 資料庫連線與 Session 管理
+├── config.py               # 配置管理
+├── line_bot.py             # LINE Bot Webhook 進入點
+├── gemini_engine.py        # Gemini AI 整合與動態摘要記憶
+├── realtime_search.py      # 即時資訊查詢
+├── earthquake.py           # 地震監控
+├── schedule_notification.py # APScheduler 背景排程
+├── models/                 # 資料庫實體模型
+│   ├── base.py
+│   ├── user.py
+│   ├── message.py
+│   ├── restaurant.py
+│   └── notification.py
+├── repositories/           # 資料庫存取層 Repository
+│   ├── user_repository.py
+│   ├── message_repository.py
+│   ├── restaurant_repository.py
+│   └── notification_repository.py
+├── handlers/               
+│   ├── command_handler.py  # 文字命令處理器 (Command Pattern)
+│   └── events/             # 事件處理器 (Event Route)
+│       ├── message_event.py
+│       └── location_event.py
+├── views/                  # UI 元件建置
+│   └── line_menus.py       # 快速回覆選單生成
 ├── search_modules/
 │   ├── weather.py         # 天氣查詢
 │   ├── news.py           # 新聞查詢
@@ -238,6 +254,12 @@ app/
 - 驗證 API 金鑰有效性
 
 ## 📝 更新日誌
+
+### v2.1.0 (2026-03-31)
+- 🏗️ **架構重構**：導入 Clean Architecture，拆分 `models` 與 `repositories`
+- 🧠 **AI 升級**：導入動態摘要記憶機制，取代字元數硬截斷，實現無限對話上下文
+- ⏰ **排程升級**：導入 `APScheduler` 取代 `asyncio.sleep`，提升背景任務穩定性
+- 🧩 **模組化**：徹底解耦 `line_bot.py`，分為 Views 與 Message/Location 事件處理器
 
 ### v2.0.2 (2025-08-13)
 - ✨ **新功能**：添加 Loading 動畫功能

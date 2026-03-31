@@ -28,7 +28,7 @@ def handle_exceptions(
                 # 如果是 LINE 回覆相關的函數，嘗試回覆錯誤訊息
                 if len(args) > 0 and hasattr(args[0], 'reply_token'):
                     try:
-                        from app.line_bot import safe_reply
+                        from app.utils.line_utils import safe_reply
                         safe_reply(args[0], fallback_message)
                     except:
                         pass

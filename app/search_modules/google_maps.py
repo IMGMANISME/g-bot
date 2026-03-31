@@ -2,7 +2,7 @@
 import os
 import requests
 import random
-from app.memory import save_restaurant, get_restaurants_backup
+from app.repositories.restaurant_repository import save_restaurant, get_restaurants_backup
 import math
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")

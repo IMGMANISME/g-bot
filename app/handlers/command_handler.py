@@ -36,7 +36,7 @@ class StatusCommandHandler(BaseCommandHandler):
     
     @handle_exceptions("⚠️ 狀態設定失敗")
     def handle(self, command: str, context: dict) -> CommandResult:
-        from app.memory import get_user_state, set_user_state
+        from app.repositories.user_repository import get_user_state, set_user_state
         
         sender_id = context.get("sender_id")
         command_lower = command.lower()
@@ -68,7 +68,7 @@ class StatusCommandHandler(BaseCommandHandler):
         return CommandResult(False, "未知的狀態命令")
     
     def _get_user_states_cn(self, sender_id: str) -> str:
-        from app.memory import get_user_state
+        from app.repositories.user_repository import get_user_state
         
         status = get_user_state(sender_id)
         status_map = {
@@ -102,7 +102,7 @@ class UtilityCommandHandler(BaseCommandHandler):
             return CommandResult(True, function_text)
         
         elif command_lower == "#清除":
-            from app.memory import clear_history
+            from app.repositories.message_repository import clear_history
             sender_id = context.get("sender_id")
             clear_history(sender_id)
             return CommandResult(True, "✅ 已清除對話紀錄。")
@@ -122,7 +122,7 @@ class ReminderCommandHandler(BaseCommandHandler):
     @handle_exceptions("⚠️ 提醒設定失敗")
     def handle(self, command: str, context: dict) -> CommandResult:
         import re
-        from app.memory import (
+        from app.repositories.notification_repository import (
             add_scheduled_notification, delete_notification_by_id,
             delete_all_notifications_for_user, get_user_notifications
         )

@@ -5,8 +5,9 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Optional
 
-from app.line_bot import push_line_message_to_users
-from app.memory import SessionLocal, UserState
+from app.utils.line_utils import push_line_message_to_users
+from app.database import SessionLocal
+from app.models.user import UserState
 from app.config import config
 from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions

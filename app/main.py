@@ -13,9 +13,9 @@ from linebot import WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 
 from app.line_bot import handle_events
-from app.memory import init_db
+from app.database import init_db
 from app.earthquake import earthquake_checker
-from app.schedule_notification import start_notifications_scheduler
+from app.schedule_notification import start_scheduler
 from app.config import config, validate_config
 from app.utils.logger import setup_logger
 from app.gemini_engine import validate_gemini_config
@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
         )
         logger.info("✅ 地震監控任務已啟動")
         
-        asyncio.create_task(start_notifications_scheduler())
+        start_scheduler()
         logger.info("✅ 通知排程器已啟動")
         
         logger.info("🎉 G-Bot 啟動完成！")
@@ -97,7 +97,7 @@ async def health_check():
     """詳細的健康檢查"""
     try:
         # 檢查資料庫連接
-        from app.memory import SessionLocal
+        from app.database import SessionLocal
         with SessionLocal() as session:
             session.execute("SELECT 1")
         
