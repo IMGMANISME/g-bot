@@ -100,10 +100,17 @@ def query_gemini(messages: list) -> str:
             result = response.text.strip()
             # 額外過濾：有些模型即便有指令，偶爾還是會噴出 <thought> 或其他標籤
             # 我們在這裡做最後一道防線，移除常見的思考標籤（如果有的話）
-            result = re.sub(r'<(thought|reasoning|draft)>.*?</\1>', '', result, flags=re.DOTALL).strip()
+            result = re.sub(r'<(thought|reasoning|draft|details|planning)>.*?</\1>', '', result, flags=re.IGNORECASE | re.DOTALL).strip()
+            # 移除常見的列表式推理 (例如 • User:, Role:, Instruction:, Constraints:, Draft 1: 等)
+            result = re.sub(r'(?m)^[ \t]*[•\-*][ \t]*(User|Role|Bosses|Instruction|Constraints|Bot Identity|Superiors|Persona|Current User Input|Previous interaction|Maintain the persona|Confirm identity|Language|Constraint check|Draft \d|Drafts?):.*$', '', result, flags=re.IGNORECASE).strip()
             # 移除常見的 markdown 引述提示，如果模型還是「想太多」
-            if "Draft" in result and "Final Response" in result:
+            if "Final Response" in result:
                 result = result.split("Final Response")[-1].strip(": \n")
+            elif "Draft" in result and len(result.split("\n")) > 5:
+                # 如果包含 Drafts 且行數較多，嘗試只取最後一部分
+                parts = re.split(r'\n\s*\n', result)
+                if len(parts) > 1:
+                    result = parts[-1].strip()
             
             logger.info(f"Gemini 回覆成功，長度: {len(result)} 字元")
             return result
