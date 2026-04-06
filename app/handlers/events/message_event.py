@@ -90,7 +90,7 @@ def handle_realtime_query(event, sender_id: str, user_input: str):
         save_message(sender_id, "user", user_input)
         save_message(sender_id, "realtime_info", realtime_info)
         messages = [
-            {"role": "system", "content": "你是G-Bot，請用繁體中文台灣用語統整這些資料。請使用自然的人類口吻回覆，嚴禁憑空捏造任何不在給定資料中的錯誤資訊，也嚴禁輸出任何思考過程或草稿，請直接輸出最終的對話內容："},
+            {"role": "system", "content": "你是G-Bot，請用繁體中文台灣用語統整這些資料。請使用自然的人類口吻回覆，禁止使用任何 emoji 表情符號，並且嚴禁憑空捏造任何不在給定資料中的錯誤資訊。請將最終的回覆內容包裹在 <reply> 與 </reply> 標籤中，嚴禁在標籤內輸出任何思考過程或草稿："},
             {"role": "user", "content": realtime_info}
         ]
         reply = query_gemini(messages)
@@ -117,7 +117,7 @@ def handle_gemini_conversation(event, sender_id: str, user_input: str):
         "1. 絕對禁止使用任何 emoji 表情符號。\n"
         "2. 請使用最自然的人類口吻說話，嚴禁出現「身為AI」、「身為語言模型」、「好的，這就為您總結」這類機器人式的罐頭回覆。\n"
         "3. 嚴禁憑空捏造(hallucinations)任何錯誤資訊！若不確定或無法回答，就直接說不知道，不要硬掰。\n"
-        "4. 【最重要的防線】：只字不差地直接輸出最終回覆，嚴禁輸出任何思考過程、草稿、模型預覽或推理步驟。\n"
+        "4. 【最重要的對話規範】：請務必將你最終要給使用者的對話回覆內容包裹在 <reply> 與 </reply> 標籤中（例如：<reply>你好！我是G-Bot</reply>）。嚴禁在 <reply> 標籤內或標籤後輸出任何思考過程、草稿、模型預覽或推理步驟。\n"
         f"目前與你對話的用戶名稱為: {user_name}"
     )
     

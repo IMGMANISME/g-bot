@@ -98,21 +98,37 @@ def query_gemini(messages: list) -> str:
 
         if hasattr(response, "text") and response.text:
             result = response.text.strip()
-            # 額外過濾：有些模型即便有指令，偶爾還是會噴出 <thought> 或其他標籤
-            # 我們在這裡做最後一道防線，移除常見的思考標籤（如果有的話）
-            result = re.sub(r'<(thought|reasoning|draft|details|planning)>.*?</\1>', '', result, flags=re.IGNORECASE | re.DOTALL).strip()
-            # 移除常見的列表式推理 (例如 • User:, Role:, Instruction:, Constraints:, Draft 1: 等)
-            result = re.sub(r'(?m)^[ \t]*[•\-*][ \t]*(User|Role|Bosses|Instruction|Constraints|Bot Identity|Superiors|Persona|Current User Input|Previous interaction|Maintain the persona|Confirm identity|Language|Constraint check|Draft \d|Drafts?):.*$', '', result, flags=re.IGNORECASE).strip()
-            # 移除常見的 markdown 引述提示，如果模型還是「想太多」
-            if "Final Response" in result:
-                result = result.split("Final Response")[-1].strip(": \n")
-            elif "Draft" in result and len(result.split("\n")) > 5:
-                # 如果包含 Drafts 且行數較多，嘗試只取最後一部分
-                parts = re.split(r'\n\s*\n', result)
-                if len(parts) > 1:
-                    result = parts[-1].strip()
             
-            logger.info(f"Gemini 回覆成功，長度: {len(result)} 字元")
+            # 1. 優先嘗試提取包裹在 <reply> 或 <answer> 標籤中的內容
+            reply_match = re.search(r'<(reply|answer)>(.*?)</\1>', result, flags=re.IGNORECASE | re.DOTALL)
+            if reply_match:
+                result = reply_match.group(2).strip()
+            else:
+                # 2. 如果沒有標籤，執行積極的清道夫邏輯
+                # 移除常見的思考/計畫標籤內容
+                result = re.sub(r'<(thought|reasoning|draft|details|planning)>.*?</\1>', '', result, flags=re.IGNORECASE | re.DOTALL).strip()
+                
+                # 移除列表式推理 (User:, Role:, Instruction:, Constraints:, Check:, Yes/No 等)
+                # 這是針對 Gemma 4 特別堅持輸出的那種「檢查表」
+                result = re.sub(r'(?m)^[ \t]*[•\-*]?[ \t]*(User|Role|Bosses|Instruction|Constraints|Bot Identity|Superiors|Persona|Current User|Previous interaction|Maintain the persona|Confirm identity|Language|Constraint check|Check|Draft \d|Drafts?|Traditional Chinese|Taiwan|Concise|Natural human tone|No emojis|No robotic|No hallucinations|Thought process):.*$', '', result, flags=re.IGNORECASE).strip()
+                
+                # 處理那種最後一行的「自我檢查」模式 (例如: Concise? Yes. Emojis? None.)
+                result = re.sub(r'(?m)^.*(\?|:)\s*(Yes|No|None|Done|Check|Correct|Trad\.? Chinese)\.?\s*$', '', result, flags=re.IGNORECASE).strip()
+
+                # 移除 Final Response 之前的內容
+                if "Final Response" in result:
+                    result = result.split("Final Response")[-1].strip(": \n")
+                
+                # 3. 備援邏輯：如果依然很長且看起來像推理，嘗試取最後一段
+                # 如果內容超過 3 段，且最後一段較短且不包含明顯的英文字樣，可能是最終答案
+                paragraphs = [p.strip() for p in re.split(r'\n\s*\n', result) if p.strip()]
+                if len(paragraphs) > 2:
+                    last_p = paragraphs[-1]
+                    # 如果最後一段沒有太多英文關鍵字，且前幾段包含關鍵字，則判定最後一段是答案
+                    if not re.search(r'(Constraints|Instruction|User asks)', last_p, re.I):
+                        result = last_p
+
+            logger.info(f"Gemini 回覆處理成功，最終長度: {len(result)} 字元")
             return result
         else:
             logger.warning("Gemini 沒有回應內容")
