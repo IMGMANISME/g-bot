@@ -106,7 +106,10 @@ def query_gemini(messages: list) -> str:
             else:
                 # 2. 如果沒有標籤，執行積極的清道夫邏輯
                 # 移除常見的思考/計畫標籤內容
-                result = re.sub(r'<(thought|reasoning|draft|details|planning)>.*?</\1>', '', result, flags=re.IGNORECASE | re.DOTALL).strip()
+                result = re.sub(r'<(thought|reasoning|draft|details|planning|think|thinking)>.*?</\1>', '', result, flags=re.IGNORECASE | re.DOTALL).strip()
+                
+                # 移除 markdown 格式的思考區塊
+                result = re.sub(r'```(thought|think|thinking|reasoning)\n.*?```', '', result, flags=re.IGNORECASE | re.DOTALL).strip()
                 
                 # 移除列表式推理 (User:, Role:, Instruction:, Constraints:, Check:, Yes/No 等)
                 # 這是針對 Gemma 4 特別堅持輸出的那種「檢查表」
