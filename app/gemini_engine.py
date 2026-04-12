@@ -99,12 +99,20 @@ def query_gemini(messages: list) -> str:
         if hasattr(response, "text") and response.text:
             result = response.text.strip()
             
-            # 1. 優先嘗試提取包裹在 <reply> 或 <answer> 標籤中的內容
+            # === 0. Gemma 4 原生思考 channel token 過濾 ===
+            # Gemma 4 使用 <|channel>thought ... <channel|> 格式輸出思考過程
+            # 最終回答在 <channel|> 之後
+            channel_match = re.search(r'<\|channel\>thought.*?<channel\|>\s*(.*)', result, flags=re.DOTALL)
+            if channel_match:
+                result = channel_match.group(1).strip()
+                logger.info("已過濾 Gemma 4 channel thinking 區塊")
+            
+            # === 1. 優先嘗試提取包裹在 <reply> 或 <answer> 標籤中的內容 ===
             reply_match = re.search(r'<(reply|answer)>(.*?)</\1>', result, flags=re.IGNORECASE | re.DOTALL)
             if reply_match:
                 result = reply_match.group(2).strip()
             else:
-                # 2. 如果沒有標籤，執行積極的清道夫邏輯
+                # === 2. 如果沒有標籤，執行積極的清道夫邏輯 ===
                 # 移除常見的思考/計畫標籤內容
                 result = re.sub(r'<(thought|reasoning|draft|details|planning|think|thinking)>.*?</\1>', '', result, flags=re.IGNORECASE | re.DOTALL).strip()
                 
@@ -122,7 +130,7 @@ def query_gemini(messages: list) -> str:
                 if "Final Response" in result:
                     result = result.split("Final Response")[-1].strip(": \n")
                 
-                # 3. 備援邏輯：如果依然很長且看起來像推理，嘗試取最後一段
+                # === 3. 備援邏輯：如果依然很長且看起來像推理，嘗試取最後一段 ===
                 # 如果內容超過 3 段，且最後一段較短且不包含明顯的英文字樣，可能是最終答案
                 paragraphs = [p.strip() for p in re.split(r'\n\s*\n', result) if p.strip()]
                 if len(paragraphs) > 2:
