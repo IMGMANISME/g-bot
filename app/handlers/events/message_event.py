@@ -18,6 +18,23 @@ from app.views.line_menus import build_quick_intro_message, build_quick_help_mes
 
 logger = setup_logger("message_event")
 
+
+def _force_clarify_when_name_query_looks_ambiguous(user_input: str, reply: str) -> str:
+    """針對「X是誰」且模型輸出分析語氣時，改為一句澄清問題。"""
+    if not user_input or not reply:
+        return reply
+
+    query_match = re.match(r"^\s*([\u4e00-\u9fffA-Za-z0-9·]{1,12})\s*是誰[？?]?\s*$", user_input)
+    if not query_match:
+        return reply
+
+    analysis_markers = ["看起來", "語境", "詞組", "意思是", "推測", "判斷"]
+    if any(marker in reply for marker in analysis_markers):
+        target = query_match.group(1).strip()
+        return f"你是想問「{target}」是哪位人物嗎？請給我更完整或正確的名字，我直接回答你。"
+
+    return reply
+
 @handle_exceptions("⚠️ 提醒列表處理失敗")
 def handle_reminder_list(event, sender_id: str):
     notifications = get_user_notifications(sender_id)
@@ -90,7 +107,15 @@ def handle_realtime_query(event, sender_id: str, user_input: str):
         save_message(sender_id, "user", user_input)
         save_message(sender_id, "realtime_info", realtime_info)
         messages = [
-            {"role": "system", "content": "你是G-Bot，請用繁體中文台灣用語統整這些資料。請使用自然的人類口吻回覆，禁止使用任何 emoji 表情符號，並且嚴禁憑空捏造任何不在給定資料中的錯誤資訊。請將最終的回覆內容包裹在 <reply> 與 </reply> 標籤中，嚴禁在標籤內輸出任何思考過程或草稿："},
+            {
+                "role": "system",
+                "content": (
+                    "你是G-Bot，請用繁體中文台灣用語統整這些資料。"
+                    "請使用自然的人類口吻回覆，禁止使用任何 emoji 表情符號，並且嚴禁憑空捏造任何不在給定資料中的錯誤資訊。"
+                    "請將最終的回覆內容包裹在 <reply> 與 </reply> 標籤中，嚴禁在標籤內輸出任何思考過程或草稿。"
+                    "只輸出最終結論，不要描述你的判斷過程；避免使用「看起來」「推測」「在某語境裡」這類分析語句。"
+                )
+            },
             {"role": "user", "content": realtime_info}
         ]
         reply = query_gemini(messages)
@@ -118,6 +143,8 @@ def handle_gemini_conversation(event, sender_id: str, user_input: str):
         "2. 請使用最自然的人類口吻說話，嚴禁出現「身為AI」、「身為語言模型」、「好的，這就為您總結」這類機器人式的罐頭回覆。\n"
         "3. 嚴禁憑空捏造(hallucinations)任何錯誤資訊！若不確定或無法回答，就直接說不知道，不要硬掰。\n"
         "4. 【最重要的對話規範】：請務必將你最終要給使用者的對話回覆內容包裹在 <reply> 與 </reply> 標籤中（例如：<reply>你好！我是G-Bot</reply>）。嚴禁在 <reply> 標籤內或標籤後輸出任何思考過程、草稿、模型預覽或推理步驟。\n"
+        "5. 只輸出最終答案，不要描述你的判斷過程；避免使用「看起來」「推測」「在某語境裡」這類分析語句。\n"
+        "6. 若使用者句子有歧義、疑似錯字或指代不清，只能先問一句澄清問題，不要自行展開語意分析。\n"
         f"目前與你對話的用戶名稱為: {user_name}"
     )
     
@@ -127,6 +154,7 @@ def handle_gemini_conversation(event, sender_id: str, user_input: str):
     
     reply = query_gemini(messages)
     reply = clean_markdown_for_line(reply)
+    reply = _force_clarify_when_name_query_looks_ambiguous(user_input, reply)
     
     save_message(sender_id, "assistant", reply)
     safe_reply(event, reply)
