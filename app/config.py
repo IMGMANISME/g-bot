@@ -13,7 +13,7 @@ class Config:
     
     # Gemini AI 配置
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY")
-    GEMINI_MODEL: str = "gemma-4-26b-a4b-it"
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemma-4-26b-a4b-it")
     GEMINI_TEMPERATURE: float = 0.7
     GEMINI_MAX_TOKENS: int = 2048
     

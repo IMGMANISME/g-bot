@@ -9,6 +9,68 @@ from app.utils.decorators import handle_exceptions
 
 logger = setup_logger("gemini_engine")
 
+
+def _extract_final_reply(raw_text: str) -> str:
+    """從模型原始輸出提取最終可回覆內容，盡量排除 thought/reasoning 片段。"""
+    if not raw_text:
+        return ""
+
+    result = raw_text.strip()
+
+    # 1) 最優先：如果有明確 <reply>/<answer> 標籤，只取標籤內容
+    tagged_reply = re.search(
+        r"<(reply|answer)>\s*(.*?)\s*</\1>",
+        result,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if tagged_reply:
+        return tagged_reply.group(2).strip()
+
+    # 2) 嘗試移除常見 thought channel 區塊
+    channel_patterns = [
+        r"<\|channel\>\s*thought.*?<channel\|>",
+        r"<\|channel\|>\s*thought.*?<\|channel\|>",
+        r"<\|start\|>\s*assistant\s*to=thought.*?<\|end\|>",
+        r"<(thought|reasoning|draft|details|planning|think|thinking)>.*?</\1>",
+        r"```(thought|think|thinking|reasoning)\n.*?```",
+    ]
+    for pattern in channel_patterns:
+        result = re.sub(pattern, "", result, flags=re.IGNORECASE | re.DOTALL).strip()
+
+    # 3) 如果有 "Final Response" 類標記，優先取後半段
+    final_markers = ["Final Response", "final response", "最終回答", "最終回覆"]
+    for marker in final_markers:
+        if marker in result:
+            result = result.split(marker)[-1].strip(": \n")
+            break
+
+    # 4) 移除殘留 channel/token 控制字串
+    result = re.sub(r"<\|[^>]+?\|>", "", result).strip()
+    result = re.sub(r"<[^>\n]*?\|>", "", result).strip()
+
+    # 5) 移除常見 checklist 推理行
+    result = re.sub(
+        r"(?m)^[ \t]*[•\-*]?[ \t]*(User|Role|Bosses|Instruction|Constraints|Bot Identity|Superiors|Persona|Current User|Previous interaction|Maintain the persona|Confirm identity|Language|Constraint check|Check|Draft \d|Drafts?|Traditional Chinese|Taiwan|Concise|Natural human tone|No emojis|No robotic|No hallucinations|Thought process):.*$",
+        "",
+        result,
+        flags=re.IGNORECASE,
+    ).strip()
+    result = re.sub(
+        r"(?m)^.*(\?|:)\s*(Yes|No|None|Done|Check|Correct|Trad\.? Chinese)\.?\s*$",
+        "",
+        result,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    # 6) 若仍是多段，且前段像規則/推理，保留最後一段
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", result) if p.strip()]
+    if len(paragraphs) > 1:
+        last_p = paragraphs[-1]
+        if not re.search(r"(Constraints|Instruction|User asks|Thought|Reasoning)", last_p, re.I):
+            result = last_p
+
+    return result.strip()
+
 # === 初始化 Gemini 模型 ===
 genai.configure(api_key=config.GEMINI_API_KEY)
 
@@ -97,47 +159,11 @@ def query_gemini(messages: list) -> str:
         response = dynamic_model.generate_content(formatted_messages)
 
         if hasattr(response, "text") and response.text:
-            result = response.text.strip()
-            
-            # === 0. Gemma 4 原生思考 channel token 過濾 ===
-            # Gemma 4 使用 <|channel>thought ... <channel|> 格式輸出思考過程
-            # 最終回答在 <channel|> 之後
-            channel_match = re.search(r'<\|channel\>thought.*?<channel\|>\s*(.*)', result, flags=re.DOTALL)
-            if channel_match:
-                result = channel_match.group(1).strip()
-                logger.info("已過濾 Gemma 4 channel thinking 區塊")
-            
-            # === 1. 優先嘗試提取包裹在 <reply> 或 <answer> 標籤中的內容 ===
-            reply_match = re.search(r'<(reply|answer)>(.*?)</\1>', result, flags=re.IGNORECASE | re.DOTALL)
-            if reply_match:
-                result = reply_match.group(2).strip()
-            else:
-                # === 2. 如果沒有標籤，執行積極的清道夫邏輯 ===
-                # 移除常見的思考/計畫標籤內容
-                result = re.sub(r'<(thought|reasoning|draft|details|planning|think|thinking)>.*?</\1>', '', result, flags=re.IGNORECASE | re.DOTALL).strip()
-                
-                # 移除 markdown 格式的思考區塊
-                result = re.sub(r'```(thought|think|thinking|reasoning)\n.*?```', '', result, flags=re.IGNORECASE | re.DOTALL).strip()
-                
-                # 移除列表式推理 (User:, Role:, Instruction:, Constraints:, Check:, Yes/No 等)
-                # 這是針對 Gemma 4 特別堅持輸出的那種「檢查表」
-                result = re.sub(r'(?m)^[ \t]*[•\-*]?[ \t]*(User|Role|Bosses|Instruction|Constraints|Bot Identity|Superiors|Persona|Current User|Previous interaction|Maintain the persona|Confirm identity|Language|Constraint check|Check|Draft \d|Drafts?|Traditional Chinese|Taiwan|Concise|Natural human tone|No emojis|No robotic|No hallucinations|Thought process):.*$', '', result, flags=re.IGNORECASE).strip()
-                
-                # 處理那種最後一行的「自我檢查」模式 (例如: Concise? Yes. Emojis? None.)
-                result = re.sub(r'(?m)^.*(\?|:)\s*(Yes|No|None|Done|Check|Correct|Trad\.? Chinese)\.?\s*$', '', result, flags=re.IGNORECASE).strip()
+            result = _extract_final_reply(response.text)
 
-                # 移除 Final Response 之前的內容
-                if "Final Response" in result:
-                    result = result.split("Final Response")[-1].strip(": \n")
-                
-                # === 3. 備援邏輯：如果依然很長且看起來像推理，嘗試取最後一段 ===
-                # 如果內容超過 3 段，且最後一段較短且不包含明顯的英文字樣，可能是最終答案
-                paragraphs = [p.strip() for p in re.split(r'\n\s*\n', result) if p.strip()]
-                if len(paragraphs) > 2:
-                    last_p = paragraphs[-1]
-                    # 如果最後一段沒有太多英文關鍵字，且前幾段包含關鍵字，則判定最後一段是答案
-                    if not re.search(r'(Constraints|Instruction|User asks)', last_p, re.I):
-                        result = last_p
+            # 若抽取後變空字串，回退原文以避免空回覆
+            if not result:
+                result = response.text.strip()
 
             logger.info(f"Gemini 回覆處理成功，最終長度: {len(result)} 字元")
             return result
