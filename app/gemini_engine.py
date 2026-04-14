@@ -10,6 +10,16 @@ from app.utils.decorators import handle_exceptions
 logger = setup_logger("gemini_engine")
 
 
+def _clean_reply_payload(text: str) -> str:
+    """清理 reply 內容中的包裝符號與殘留標記。"""
+    cleaned = (text or "").strip()
+    cleaned = cleaned.strip("`\"'“”")
+    cleaned = re.sub(r"^<(reply|answer)>\s*", "", cleaned, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"\s*</(reply|answer)>$", "", cleaned, flags=re.IGNORECASE).strip()
+    cleaned = cleaned.strip("`\"'“”")
+    return cleaned.strip()
+
+
 def _extract_final_reply(raw_text: str) -> str:
     """從模型原始輸出提取最終可回覆內容，盡量排除 thought/reasoning 片段。"""
     if not raw_text:
@@ -17,14 +27,36 @@ def _extract_final_reply(raw_text: str) -> str:
 
     result = raw_text.strip()
 
-    # 1) 最優先：如果有明確 <reply>/<answer> 標籤，只取標籤內容
-    tagged_reply = re.search(
+    # 1) 最優先：如果有明確 <reply>/<answer> 標籤，只取最後一組標籤內容
+    tagged_replies = re.findall(
         r"<(reply|answer)>\s*(.*?)\s*</\1>",
         result,
         flags=re.IGNORECASE | re.DOTALL,
     )
-    if tagged_reply:
-        return tagged_reply.group(2).strip()
+    if tagged_replies:
+        return _clean_reply_payload(tagged_replies[-1][1])
+
+    # 1.1) 常見於 Gemma：只出現 <reply> 開頭但沒關閉標籤
+    if re.search(r"<(reply|answer)>", result, flags=re.IGNORECASE):
+        split_by_open_tag = re.split(r"<(reply|answer)>", result, flags=re.IGNORECASE)
+        if len(split_by_open_tag) >= 3:
+            # re.split 會保留群組，真正內容在最後一段
+            tail = split_by_open_tag[-1]
+            tail = re.split(r"</(reply|answer)>", tail, flags=re.IGNORECASE)[0]
+            cleaned_tail = _clean_reply_payload(tail)
+            if cleaned_tail:
+                return cleaned_tail
+
+    # 1.2) 常見於規劃輸出：Format: `<reply>...`
+    format_reply = re.search(
+        r"(?:Format|格式)\s*:\s*`?\s*<(?:reply|answer)>\s*(.*?)\s*(?:</(?:reply|answer)>)?`?\s*$",
+        result,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if format_reply:
+        cleaned_format = _clean_reply_payload(format_reply.group(1))
+        if cleaned_format:
+            return cleaned_format
 
     # 2) 嘗試移除常見 thought channel 區塊
     channel_patterns = [
@@ -62,14 +94,35 @@ def _extract_final_reply(raw_text: str) -> str:
         flags=re.IGNORECASE,
     ).strip()
 
-    # 6) 若仍是多段，且前段像規則/推理，保留最後一段
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", result) if p.strip()]
-    if len(paragraphs) > 1:
-        last_p = paragraphs[-1]
-        if not re.search(r"(Constraints|Instruction|User asks|Thought|Reasoning)", last_p, re.I):
-            result = last_p
+    # 6) 過濾掉明顯的推理/規劃行，再挑最可能的最終句子
+    meta_line_prefix = (
+        r"^(The system prompt|The user prompt|Standard LLM behavior|Conflict Resolution|Decision|"
+        r"Constraint Check|Drafting Response|Refining|Checking|Final Plan|Identity|Developer|"
+        r"Format|Language|No emojis|Wrap in|Natural tone|Wait,)\b"
+    )
+    lines = [line.strip() for line in result.splitlines() if line.strip()]
+    filtered_lines = [
+        line for line in lines
+        if not re.match(meta_line_prefix, line, flags=re.IGNORECASE)
+    ]
 
-    return result.strip()
+    # 優先取含中文且非 meta 的最後一行
+    chinese_lines = [
+        line for line in filtered_lines
+        if re.search(r"[\u4e00-\u9fff]", line) and not re.search(r"(Plan|Constraint|Instruction)", line, re.I)
+    ]
+    if chinese_lines:
+        return _clean_reply_payload(chinese_lines[-1])
+
+    if filtered_lines:
+        return _clean_reply_payload(filtered_lines[-1])
+
+    # 7) 最後備援：若仍是多段，取最後一段
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", result) if p.strip()]
+    if paragraphs:
+        result = paragraphs[-1]
+
+    return _clean_reply_payload(result)
 
 # === 初始化 Gemini 模型 ===
 genai.configure(api_key=config.GEMINI_API_KEY)
