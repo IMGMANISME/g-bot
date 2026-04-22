@@ -81,18 +81,75 @@ def handle_restaurant_search(event, sender_id: str, user_input: str):
         return
 
     lowered = user_input.lower()
-    if "便宜" in lowered: min_price, max_price = 0, 2
-    elif "普通" in lowered: min_price, max_price = 1, 3
-    elif "貴" in lowered: min_price, max_price = 3, 4
-    else: min_price, max_price = 0, 4
 
-    if "附近" in lowered: radius = config.NEAR_RADIUS
-    elif "遠一點" in lowered: radius = config.FAR_RADIUS
-    elif re.search(r"(\d+)公里", lowered): radius = int(re.search(r"(\d+)", lowered).group(1)) * 1000
-    else: radius = config.DEFAULT_SEARCH_RADIUS
+    if "便宜" in lowered:
+        min_price, max_price = 0, 2
+    elif "普通" in lowered:
+        min_price, max_price = 1, 3
+    elif "貴" in lowered:
+        min_price, max_price = 3, 4
+    else:
+        min_price, max_price = 0, 4
+
+    if "附近" in lowered or "近一點" in lowered:
+        radius = config.NEAR_RADIUS
+    elif "遠一點" in lowered:
+        radius = config.FAR_RADIUS
+    else:
+        km_match = re.search(r"(\d+(?:\.\d+)?)\s*(公里|km)", lowered)
+        meter_match = re.search(r"(\d+)\s*(公尺|米|m)", lowered)
+        if km_match:
+            radius = int(float(km_match.group(1)) * 1000)
+        elif meter_match:
+            radius = int(meter_match.group(1))
+        else:
+            radius = config.DEFAULT_SEARCH_RADIUS
+
+    radius = max(300, min(radius, 12000))
+
+    count_match = re.search(r"(\d+)\s*(間|家)", lowered)
+    max_results = int(count_match.group(1)) if count_match else 3
+    max_results = max(1, min(max_results, 5))
+
+    min_rating = 3.5
+    if "高評分" in lowered or "高分" in lowered:
+        min_rating = 4.2
+    rating_match = re.search(r"評分\s*(\d(?:\.\d)?)\s*(?:以上)?", lowered)
+    if rating_match:
+        min_rating = max(1.0, min(5.0, float(rating_match.group(1))))
+
+    cuisine_keyword = None
+    cuisine_hints = {
+        "日式": "日式料理",
+        "壽司": "壽司",
+        "拉麵": "拉麵",
+        "韓式": "韓式料理",
+        "火鍋": "火鍋",
+        "燒肉": "燒肉",
+        "早午餐": "早午餐",
+        "咖啡": "咖啡廳",
+        "牛排": "牛排",
+        "義式": "義式料理",
+        "美式": "美式餐廳",
+        "甜點": "甜點",
+        "素食": "素食"
+    }
+    for hint, keyword in cuisine_hints.items():
+        if hint in lowered:
+            cuisine_keyword = keyword
+            break
 
     try:
-        result = search_restaurants_nearby(latlng[0], latlng[1], radius, 1, min_price, max_price)
+        result = search_restaurants_nearby(
+            latlng[0],
+            latlng[1],
+            radius=radius,
+            max_results=max_results,
+            min_price=min_price,
+            max_price=max_price,
+            min_rating=min_rating,
+            keyword=cuisine_keyword
+        )
         safe_reply(event, result)
     except Exception as e:
         logger.error(f"餐廳搜尋失敗: {e}")
