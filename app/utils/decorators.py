@@ -1,8 +1,7 @@
 # app/utils/decorators.py
 """實用的裝飾器函數"""
 import functools
-import asyncio
-from typing import Callable, Any, Optional
+from typing import Callable
 from app.utils.logger import setup_logger
 
 logger = setup_logger("decorators")

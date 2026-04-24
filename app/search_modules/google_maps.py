@@ -1,7 +1,7 @@
 # app/search_modules/google_maps.py
 import math
 import os
-from typing import Optional, Tuple
+from typing import Optional, Set, Tuple
 
 import requests
 
@@ -103,9 +103,16 @@ def _rank_results(
     min_price: int,
     max_price: int,
     min_rating: float,
+    strict_price: bool = False,
+    exclude_place_ids: Optional[Set[str]] = None,
 ) -> list:
+    exclude_place_ids = exclude_place_ids or set()
     ranked = []
     for place in places:
+        place_id = place.get("place_id")
+        if place_id and place_id in exclude_place_ids:
+            continue
+
         location = place.get("geometry", {}).get("location", {})
         place_lat = _safe_float(location.get("lat"))
         place_lng = _safe_float(location.get("lng"))
@@ -117,6 +124,8 @@ def _rank_results(
             continue
 
         price_level = place.get("price_level")
+        if strict_price and not isinstance(price_level, int):
+            continue
         if isinstance(price_level, int) and not (min_price <= price_level <= max_price):
             continue
 
@@ -201,15 +210,27 @@ def search_restaurants_nearby(
     max_price: int = 4,
     min_rating: float = 3.5,
     keyword: Optional[str] = None,
-):
+    strict_price: bool = False,
+    exclude_place_ids: Optional[Set[str]] = None,
+) -> Tuple[str, list[str]]:
+    exclude_place_ids = exclude_place_ids or set()
+
     if not GOOGLE_API_KEY:
         logger.warning("GOOGLE_MAPS_API_KEY 未設定，改用資料庫備援")
         backup = get_restaurants_backup(
-            lat, lng, radius, min_price, max_price, min_rating, max_results
+            lat,
+            lng,
+            radius,
+            min_price,
+            max_price,
+            min_rating,
+            max_results,
+            exclude_place_ids=exclude_place_ids,
         )
         if backup:
-            return _build_backup_message(backup)
-        return "⚠️ 目前無法使用餐廳推薦，請稍後再試。"
+            backup_ids = [place.place_id for place in backup if place.place_id]
+            return _build_backup_message(backup), backup_ids
+        return "⚠️ 目前無法使用餐廳推薦，請稍後再試。", []
 
     search_plans = [
         {
@@ -231,8 +252,8 @@ def search_restaurants_nearby(
         {
             "radius": min(int(radius * 2.0), 12000),
             "open_now": False,
-            "min_price": 0,
-            "max_price": 4,
+            "min_price": min_price if strict_price else 0,
+            "max_price": max_price if strict_price else 4,
             "min_rating": max(3.0, min_rating - 0.5),
             "keyword": keyword,
         },
@@ -270,10 +291,12 @@ def search_restaurants_nearby(
                 max_price,
                 min_rating,
                 max_results,
+                exclude_place_ids=exclude_place_ids,
             )
             if backup:
-                return _build_backup_message(backup)
-            return "⚠️ Google Maps 暫時不可用，且目前找不到可用的備援餐廳。"
+                backup_ids = [place.place_id for place in backup if place.place_id]
+                return _build_backup_message(backup), backup_ids
+            return "⚠️ Google Maps 暫時不可用，且目前找不到可用的備援餐廳。", []
 
         if status not in {"OK", "ZERO_RESULTS"}:
             logger.warning(f"Google Places 回傳異常狀態: {status}")
@@ -286,6 +309,8 @@ def search_restaurants_nearby(
             min_price=plan["min_price"],
             max_price=plan["max_price"],
             min_rating=plan["min_rating"],
+            strict_price=strict_price,
+            exclude_place_ids=exclude_place_ids,
         )
         if not ranked:
             continue
@@ -293,12 +318,25 @@ def search_restaurants_nearby(
         selected = ranked[: max(1, min(max_results, 5))]
         for item in selected:
             save_restaurant(item["place"], lat, lng)
-        return _build_live_message(selected, plan["keyword"])
+        selected_ids = [
+            item["place"].get("place_id")
+            for item in selected
+            if item["place"].get("place_id")
+        ]
+        return _build_live_message(selected, plan["keyword"]), selected_ids
 
     backup = get_restaurants_backup(
-        lat, lng, radius, min_price, max_price, min_rating, max_results
+        lat,
+        lng,
+        radius,
+        min_price,
+        max_price,
+        min_rating,
+        max_results,
+        exclude_place_ids=exclude_place_ids,
     )
     if backup:
-        return _build_backup_message(backup)
+        backup_ids = [place.place_id for place in backup if place.place_id]
+        return _build_backup_message(backup), backup_ids
 
-    return "❌ 這次找不到符合條件的餐廳，試試放寬條件（像是距離或價位）再問我一次。"
+    return "❌ 這次找不到符合條件的餐廳，試試放寬條件（像是距離或價位）再問我一次。", []

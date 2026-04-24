@@ -3,6 +3,7 @@ from linebot.models import TextSendMessage, QuickReply, QuickReplyButton, Messag
 from app.config import config
 from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions, rate_limit
+from app.utils.cache import global_cache
 from app.utils.line_utils import (
     get_sender_id, get_chat_id, safe_reply, show_loading_animation, 
     get_or_fetch_user_name, remove_repetitive_messages, clean_markdown_for_line, line_bot_api
@@ -17,6 +18,39 @@ from app.handlers.command_handler import command_processor
 from app.views.line_menus import build_quick_intro_message, build_quick_help_message
 
 logger = setup_logger("message_event")
+RECENT_RESTAURANT_CACHE_TTL = 60 * 60 * 2
+RECENT_RESTAURANT_MAX_IDS = 20
+
+
+def _recent_restaurant_cache_key(sender_id: str) -> str:
+    return f"restaurant_recent:{sender_id}"
+
+
+def _get_recent_restaurant_ids(sender_id: str) -> list[str]:
+    cached = global_cache.get(_recent_restaurant_cache_key(sender_id))
+    if not isinstance(cached, list):
+        return []
+    return [pid for pid in cached if isinstance(pid, str) and pid.strip()]
+
+
+def _update_recent_restaurant_ids(sender_id: str, recommended_ids: list[str]):
+    if not recommended_ids:
+        return
+
+    recent = _get_recent_restaurant_ids(sender_id)
+    for place_id in recommended_ids:
+        if place_id in recent:
+            recent.remove(place_id)
+        recent.append(place_id)
+
+    if len(recent) > RECENT_RESTAURANT_MAX_IDS:
+        recent = recent[-RECENT_RESTAURANT_MAX_IDS:]
+
+    global_cache.set(
+        _recent_restaurant_cache_key(sender_id),
+        recent,
+        ttl=RECENT_RESTAURANT_CACHE_TTL
+    )
 
 
 def _force_clarify_when_name_query_looks_ambiguous(user_input: str, reply: str) -> str:
@@ -82,12 +116,16 @@ def handle_restaurant_search(event, sender_id: str, user_input: str):
 
     lowered = user_input.lower()
 
+    strict_price = False
     if "便宜" in lowered:
-        min_price, max_price = 0, 2
+        min_price, max_price = 0, 1
+        strict_price = True
     elif "普通" in lowered:
-        min_price, max_price = 1, 3
+        min_price, max_price = 2, 2
+        strict_price = True
     elif "貴" in lowered:
         min_price, max_price = 3, 4
+        strict_price = True
     else:
         min_price, max_price = 0, 4
 
@@ -140,7 +178,8 @@ def handle_restaurant_search(event, sender_id: str, user_input: str):
             break
 
     try:
-        result = search_restaurants_nearby(
+        recent_place_ids = set(_get_recent_restaurant_ids(sender_id))
+        result, recommended_place_ids = search_restaurants_nearby(
             latlng[0],
             latlng[1],
             radius=radius,
@@ -148,8 +187,11 @@ def handle_restaurant_search(event, sender_id: str, user_input: str):
             min_price=min_price,
             max_price=max_price,
             min_rating=min_rating,
-            keyword=cuisine_keyword
+            keyword=cuisine_keyword,
+            strict_price=strict_price,
+            exclude_place_ids=recent_place_ids
         )
+        _update_recent_restaurant_ids(sender_id, recommended_place_ids)
         safe_reply(event, result)
     except Exception as e:
         logger.error(f"餐廳搜尋失敗: {e}")

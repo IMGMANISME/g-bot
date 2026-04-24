@@ -1,6 +1,5 @@
 #app/schedule_notification.py
-import asyncio
-from datetime import datetime, time as dtime
+from datetime import datetime
 from pytz import timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 

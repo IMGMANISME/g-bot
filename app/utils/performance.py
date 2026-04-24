@@ -3,7 +3,7 @@
 import time
 import psutil
 import threading
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from datetime import datetime, timedelta
 from collections import defaultdict, deque
 from dataclasses import dataclass

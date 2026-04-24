@@ -1,6 +1,6 @@
 # app/handlers/command_handler.py
 """命令處理器模組"""
-from typing import Dict, Callable, Optional, Tuple
+from typing import Optional, Tuple
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from app.utils.logger import setup_logger
@@ -124,7 +124,7 @@ class ReminderCommandHandler(BaseCommandHandler):
         import re
         from app.repositories.notification_repository import (
             add_scheduled_notification, delete_notification_by_id,
-            delete_all_notifications_for_user, get_user_notifications
+            delete_all_notifications_for_user
         )
         
         sender_id = context.get("sender_id")

@@ -1,8 +1,9 @@
 # app/database.py
 from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 from contextlib import contextmanager
+from importlib import import_module
 
 from app.config import config
 from app.utils.logger import setup_logger
@@ -42,11 +43,15 @@ def get_db_session():
 def init_db():
     """初始化資料庫"""
     from app.models.base import Base
-    # import all models before creating to ensure they are registered
-    import app.models.user
-    import app.models.message
-    import app.models.restaurant
-    import app.models.notification
+    # 匯入模型模組以確保 SQLAlchemy metadata 完整註冊
+    model_modules = [
+        "app.models.user",
+        "app.models.message",
+        "app.models.restaurant",
+        "app.models.notification",
+    ]
+    for module in model_modules:
+        import_module(module)
     
     try:
         Base.metadata.create_all(bind=engine)

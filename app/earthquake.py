@@ -1,7 +1,6 @@
 # app/earthquake.py
 import requests
 import os
-import asyncio
 from datetime import datetime, timedelta
 from typing import Optional
 

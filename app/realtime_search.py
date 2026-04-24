@@ -1,8 +1,7 @@
 #app/realtime_search.py
 import re
 import logging
-from datetime import datetime
-from app.search_modules.weather import get_weather, extract_city
+from app.search_modules.weather import get_weather
 from app.search_modules.news import get_latest_news
 from app.search_modules.time import get_realtime
 from app.search_modules.nba import nba_info

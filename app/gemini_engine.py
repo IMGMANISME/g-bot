@@ -1,5 +1,4 @@
 #app/gemini_engine.py
-import os
 import re
 import google.generativeai as genai
 from tenacity import retry, stop_after_attempt, wait_exponential

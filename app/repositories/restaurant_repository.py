@@ -1,4 +1,6 @@
 import math
+from typing import Optional, Set
+
 from sqlalchemy import Float, cast
 from app.database import SessionLocal
 from app.models.restaurant import Restaurant
@@ -42,21 +44,33 @@ def save_restaurant(place: dict, lat: float, lng: float):
         db.add(restaurant)
         db.commit()
 
-def get_restaurants_backup(lat: float, lng: float, radius=4000, min_price=0, max_price=4, min_rating=3.5, limit=5):
+def get_restaurants_backup(
+    lat: float,
+    lng: float,
+    radius=4000,
+    min_price=0,
+    max_price=4,
+    min_rating=3.5,
+    limit=5,
+    exclude_place_ids: Optional[Set[str]] = None
+):
     with SessionLocal() as db:
         lat_diff = radius / 111000
         lng_diff = radius / (111000 * abs(math.cos(math.radians(lat))) + 0.00001)
         lat_expr = cast(Restaurant.lat, Float)
         lng_expr = cast(Restaurant.lng, Float)
 
-        results = (
+        query = (
             db.query(Restaurant)
             .filter(lat_expr.between(lat - lat_diff, lat + lat_diff))
             .filter(lng_expr.between(lng - lng_diff, lng + lng_diff))
             .filter(Restaurant.rating >= min_rating)
             .filter(Restaurant.price_level >= min_price, Restaurant.price_level <= max_price)
-            .all()
         )
+        if exclude_place_ids:
+            query = query.filter(~Restaurant.place_id.in_(list(exclude_place_ids)))
+
+        results = query.all()
 
         def distance_key(place: Restaurant) -> float:
             try:

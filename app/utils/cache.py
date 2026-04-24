@@ -2,7 +2,7 @@
 """簡單的記憶體快取系統"""
 import time
 import threading
-from typing import Any, Optional, Dict, Tuple
+from typing import Any, Optional, Dict
 from dataclasses import dataclass
 from app.utils.logger import setup_logger
 
