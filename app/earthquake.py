@@ -51,7 +51,7 @@ def create_earthquake_message(magnitude: float, earthquake_time: datetime, locat
         f"🌍【地震速報】\n\n"
         f"📍 震央：{location}\n"
         f"⏰ 時間：{earthquake_time.strftime('%m/%d %H:%M')}\n"
-        f"💥 規模：{magnitude}級"
+        f"💥 規模：{magnitude}"
     )
 
 @handle_exceptions("地震API請求失敗")

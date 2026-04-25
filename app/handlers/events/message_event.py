@@ -211,11 +211,19 @@ def handle_realtime_query(event, sender_id: str, user_input: str):
                 "content": (
                     "你是G-Bot，請用繁體中文台灣用語統整這些資料。"
                     "請使用自然的人類口吻回覆，禁止使用任何 emoji 表情符號，並且嚴禁憑空捏造任何不在給定資料中的錯誤資訊。"
+                    "請只根據使用者問題與提供的即時資料回答；如果資料不足，就直接說目前查到的資料不足。"
+                    "若資料含有來源名稱或網址，請在回覆中保留關鍵來源。"
                     "請將最終的回覆內容包裹在 <reply> 與 </reply> 標籤中，嚴禁在標籤內輸出任何思考過程或草稿。"
                     "只輸出最終結論，不要描述你的判斷過程；避免使用「看起來」「推測」「在某語境裡」這類分析語句。"
                 )
             },
-            {"role": "user", "content": realtime_info}
+            {
+                "role": "user",
+                "content": (
+                    f"使用者問題：{user_input}\n\n"
+                    f"即時資料：\n{realtime_info}"
+                )
+            }
         ]
         reply = query_gemini(messages)
         reply = clean_markdown_for_line(reply)

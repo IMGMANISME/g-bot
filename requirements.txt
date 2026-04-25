@@ -7,7 +7,6 @@ python-dotenv
 sqlalchemy
 asyncpg
 tenacity
-feedparser
 psycopg2-binary
 pytz
 schedule

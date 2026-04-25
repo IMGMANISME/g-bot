@@ -12,7 +12,7 @@ G-Bot 是一個功能豐富的 LINE 聊天機器人，整合了 Google Gemini AI
 ## ✨ 主要功能
 
 ### 🤖 AI 對話
-- 基於 Google Gemini AI (gemma-3-27b-it) 的智能對話
+- 基於 Google Gemini AI 的智能對話（可透過 `GEMINI_MODEL` 設定模型）
 - 支援繁體中文回應
 - 對話歷史記錄與上下文理解
 - 智能溫度控制與回應調整
@@ -23,7 +23,7 @@ G-Bot 是一個功能豐富的 LINE 聊天機器人，整合了 Google Gemini AI
 - 支援距離篩選（附近/遠一點/指定公里數）
 
 ### 📰 即時資訊查詢
-- **新聞查詢**：輸入「XXX新聞」取得最新相關新聞
+- **新聞與網頁搜尋**：輸入「XXX新聞」、「查一下 XXX」或「XXX 最新消息」取得即時搜尋結果
 - **天氣查詢**：輸入「XXX天氣」取得五日天氣預報
 - **NBA 資訊**：輸入「NBA戰績」或「NBA比賽」取得最新賽事資訊
 - **時間查詢**：取得當前時間資訊
@@ -43,7 +43,7 @@ G-Bot 是一個功能豐富的 LINE 聊天機器人，整合了 Google Gemini AI
 - **#清除**：清除對話歷史
 
 ### 🔍 其他功能
-- 地震監控與通知（每30秒檢查，4.0級以上地震）
+- 地震監控與通知（預設每 20 秒檢查，規模 4.0 以上地震）
 - 排程通知系統
 - 效能監控與指標收集
 - 速率限制保護（30次/分鐘）
@@ -77,13 +77,28 @@ pip install -r requirements.txt
 LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token
 LINE_CHANNEL_SECRET=your_line_channel_secret
 GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemma-4-26b-a4b-it
+GEMINI_TEMPERATURE=0.7
+GEMINI_MAX_TOKENS=2048
 DATABASE_URL=postgresql://username:password@localhost:5432/gbot_db
 GOOGLE_MAPS_API_KEY=your_google_maps_api_key
 WEATHER_API_KEY=your_weather_api_key
+TAVILY_API_KEY=your_tavily_api_key
+TAVILY_SEARCH_MAX_RESULTS=5
+TAVILY_SEARCH_DEPTH=basic
+TAVILY_SEARCH_TOPIC=general
+TAVILY_INCLUDE_ANSWER=true
 MENTION_KEYWORDS=@G-bot
+ADMIN_USERS=G-MAN,以馨,陳均葦
 ENABLE_LOADING_ANIMATION=true
-DEFAULT_LOADING_DURATION=5
-MAX_LOADING_DURATION=20
+DEFAULT_SEARCH_RADIUS=1500
+NEAR_RADIUS=500
+FAR_RADIUS=2500
+EARTHQUAKE_CHECK_INTERVAL=20
+EARTHQUAKE_MIN_MAGNITUDE=4.0
+EARTHQUAKE_MAX_LATENCY=900
+PORT=8787
+LOG_LEVEL=INFO
 ```
 
 4. **資料庫設定**
@@ -123,13 +138,28 @@ docker run -d \
 | `LINE_CHANNEL_ACCESS_TOKEN` | 必要 | LINE Bot 存取權杖 |
 | `LINE_CHANNEL_SECRET` | 必要 | LINE Bot 頻道密鑰 |
 | `GEMINI_API_KEY` | 必要 | Google Gemini AI API 金鑰 |
+| `GEMINI_MODEL` | 可選 | Gemini 模型名稱（預設：gemma-4-26b-a4b-it） |
+| `GEMINI_TEMPERATURE` | 可選 | AI 回應溫度（預設：0.7） |
+| `GEMINI_MAX_TOKENS` | 可選 | AI 回應最大 token 數（預設：2048） |
 | `DATABASE_URL` | 必要 | PostgreSQL 資料庫連接字串 |
 | `GOOGLE_MAPS_API_KEY` | 可選 | Google Maps API 金鑰（餐廳推薦功能） |
 | `WEATHER_API_KEY` | 可選 | 天氣 API 金鑰 |
+| `TAVILY_API_KEY` | 可選 | Tavily Search API 金鑰（一般網頁搜尋） |
+| `TAVILY_SEARCH_MAX_RESULTS` | 可選 | 每次一般網頁搜尋回傳結果數（預設：5，最多 20） |
+| `TAVILY_SEARCH_DEPTH` | 可選 | Tavily 搜尋深度：`basic` 或 `advanced`（預設：basic） |
+| `TAVILY_SEARCH_TOPIC` | 可選 | Tavily 搜尋類型：`general`、`news` 或 `finance`（預設：general） |
+| `TAVILY_INCLUDE_ANSWER` | 可選 | 是否要求 Tavily 回傳搜尋摘要（預設：true） |
 | `MENTION_KEYWORDS` | 可選 | 標記關鍵字（預設：@G-bot） |
+| `ADMIN_USERS` | 可選 | 管理員名稱清單 |
 | `ENABLE_LOADING_ANIMATION` | 可選 | 啟用 Loading 動畫（預設：true） |
-| `DEFAULT_LOADING_DURATION` | 可選 | 預設 Loading 持續時間（秒，預設：5，最少5秒） |
-| `MAX_LOADING_DURATION` | 可選 | 最大 Loading 持續時間（秒，預設：20，最多60秒） |
+| `DEFAULT_SEARCH_RADIUS` | 可選 | 餐廳搜尋預設半徑，單位公尺（預設：1500） |
+| `NEAR_RADIUS` | 可選 | 「附近」餐廳搜尋半徑，單位公尺（預設：500） |
+| `FAR_RADIUS` | 可選 | 「遠一點」餐廳搜尋半徑，單位公尺（預設：2500） |
+| `EARTHQUAKE_CHECK_INTERVAL` | 可選 | 地震監控檢查間隔，單位秒（預設：20） |
+| `EARTHQUAKE_MIN_MAGNITUDE` | 可選 | 地震通知最低規模（預設：4.0） |
+| `EARTHQUAKE_MAX_LATENCY` | 可選 | 地震資料最大延遲，單位秒（預設：900） |
+| `PORT` | 可選 | 本地或容器服務端口（預設：8787） |
+| `LOG_LEVEL` | 可選 | 日誌等級（預設：INFO） |
 
 ## 🏗️ 專案架構
 
@@ -163,7 +193,7 @@ app/
 │   └── line_menus.py       # 快速回覆選單生成
 ├── search_modules/
 │   ├── weather.py         # 天氣查詢
-│   ├── news.py           # 新聞查詢
+│   ├── tavily_search.py  # Tavily 網頁與新聞搜尋
 │   ├── nba.py            # NBA 資訊
 │   ├── time.py           # 時間查詢
 │   └── google_maps.py    # 地圖與餐廳查詢
@@ -278,7 +308,7 @@ app/
 - 🤖 **AI升級**：整合 Google Gemini AI
 - 📍 **定位服務**：餐廳推薦與地理位置功能
 - ⏰ **提醒系統**：智能提醒與排程功能
-- 🔍 **即時查詢**：新聞、天氣、NBA 等即時資訊
+- 🔍 **即時查詢**：Tavily 搜尋、天氣、NBA 等即時資訊
 - 🏗️ **架構優化**：模組化設計與效能提升
 
 ## 🤝 貢獻指南
