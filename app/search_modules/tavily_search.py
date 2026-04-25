@@ -12,14 +12,10 @@ TAVILY_SEARCH_URL = "https://api.tavily.com/search"
 
 
 def _normalize_search_item(item: dict[str, Any]) -> dict[str, str]:
-    score = item.get("score")
-    score_text = f"{score:.2f}" if isinstance(score, (int, float)) else "N/A"
-
     return {
         "title": item.get("title") or "無標題",
         "url": item.get("url") or "",
         "content": item.get("content") or "無摘要",
-        "score": score_text,
     }
 
 
@@ -67,29 +63,19 @@ def get_tavily_search_results(query: str, limit: int | None = None) -> str:
     if not results:
         return f"查無「{query}」的 Tavily 搜尋結果。"
 
-    lines = [f"Tavily 搜尋查詢：{data.get('query') or query}"]
+    lines = [f"使用者查詢：{data.get('query') or query}"]
 
     answer = data.get("answer")
     if answer:
         lines.append(f"搜尋摘要：{answer}")
 
-    response_time = data.get("response_time")
-    if response_time:
-        lines.append(f"搜尋耗時：{response_time} 秒")
-
-    usage = data.get("usage") or {}
-    credits = usage.get("credits")
-    if credits is not None:
-        lines.append(f"使用額度：{credits} credit")
-
-    for index, item in enumerate(results[:max_results], start=1):
+    for item in results[:max_results]:
         result = _normalize_search_item(item)
         lines.append(
             "\n".join([
-                f"來源 {index}",
+                "搜尋結果",
                 f"標題：{result['title']}",
-                f"摘要：{result['content']}",
-                f"相關分數：{result['score']}",
+                f"內容：{result['content']}",
                 f"網址：{result['url']}",
             ])
         )
