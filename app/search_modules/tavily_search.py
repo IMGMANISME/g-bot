@@ -9,6 +9,7 @@ from app.config import config
 logger = logging.getLogger(__name__)
 
 TAVILY_SEARCH_URL = "https://api.tavily.com/search"
+NEWS_QUERY_KEYWORDS = ("新聞", "最新", "今天", "現在", "目前", "剛剛", "即時")
 
 
 def _normalize_search_item(item: dict[str, Any]) -> dict[str, str]:
@@ -31,9 +32,11 @@ def get_tavily_search_results(query: str, limit: int | None = None) -> str:
     max_results = limit or config.TAVILY_SEARCH_MAX_RESULTS
     max_results = max(1, min(max_results, 20))
 
+    topic = "news" if any(keyword in query for keyword in NEWS_QUERY_KEYWORDS) else config.TAVILY_SEARCH_TOPIC
+
     payload = {
         "query": query,
-        "topic": config.TAVILY_SEARCH_TOPIC,
+        "topic": topic,
         "search_depth": config.TAVILY_SEARCH_DEPTH,
         "max_results": max_results,
         "include_answer": config.TAVILY_INCLUDE_ANSWER,
