@@ -1,5 +1,5 @@
 # app/database.py
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 from contextlib import contextmanager
@@ -10,6 +10,13 @@ from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions
 
 logger = setup_logger("database")
+
+COMPAT_COLUMNS = {
+    "user_state": {
+        "earthquake_enabled": "BOOLEAN DEFAULT TRUE",
+        "earthquake_min_magnitude": "FLOAT",
+    }
+}
 
 # 建立資料庫引擎，使用連接池
 engine = create_engine(
@@ -55,7 +62,22 @@ def init_db():
     
     try:
         Base.metadata.create_all(bind=engine)
+        _ensure_compat_columns()
         logger.info("✅ 資料庫表格建立成功")
     except Exception as e:
         logger.error(f"❌ 資料庫初始化失敗: {e}")
         raise
+
+def _ensure_compat_columns():
+    """Add simple backward-compatible columns when no migration tool is present."""
+    inspector = inspect(engine)
+    with engine.begin() as connection:
+        for table_name, columns in COMPAT_COLUMNS.items():
+            if not inspector.has_table(table_name):
+                continue
+            existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
+            for column_name, column_type in columns.items():
+                if column_name in existing_columns:
+                    continue
+                connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
+                logger.info(f"已新增相容欄位: {table_name}.{column_name}")

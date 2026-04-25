@@ -2,6 +2,7 @@
 import os
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+from sqlalchemy import text
 
 # 載入環境變數
 load_dotenv()
@@ -75,7 +76,7 @@ app = FastAPI(
 # 添加 CORS 中介軟體
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=config.CORS_ALLOW_ORIGINS or [],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -99,7 +100,7 @@ async def health_check():
         # 檢查資料庫連接
         from app.database import SessionLocal
         with SessionLocal() as session:
-            session.execute("SELECT 1")
+            session.execute(text("SELECT 1"))
         
         return {
             "status": "healthy",

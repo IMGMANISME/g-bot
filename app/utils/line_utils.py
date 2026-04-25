@@ -27,16 +27,21 @@ def push_line_message_to_users(message: str, user_ids: list[str], image_url: str
 
 def get_sender_id(event) -> str:
     source = event.source
+    if hasattr(source, 'user_id') and source.user_id:
+        return source.user_id
+    return "unknown"
+
+def get_chat_id(event) -> str:
+    source = event.source
     if source.type == 'user': return source.user_id
     elif source.type == 'group': return source.group_id
     elif source.type == 'room': return source.room_id
     return "unknown"
 
-def get_chat_id(event) -> str:
-    if hasattr(event.source, 'user_id'): return event.source.user_id
-    elif hasattr(event.source, 'group_id'): return event.source.group_id
-    elif hasattr(event.source, 'room_id'): return event.source.room_id
-    return get_sender_id(event)
+def get_memory_id(event) -> str:
+    sender_id = get_sender_id(event)
+    chat_id = get_chat_id(event)
+    return sender_id if sender_id == chat_id else f"{chat_id}:{sender_id}"
 
 def clean_markdown_for_line(text: str) -> str:
     text = re.sub(r'^\* ', '• ', text, flags=re.MULTILINE)
@@ -55,13 +60,16 @@ def remove_repetitive_messages(messages: list) -> list:
     return cleaned
 
 def safe_reply(event, message: str):
+    safe_reply_message(event, TextSendMessage(text=message))
+
+def safe_reply_message(event, send_message):
     try:
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))
+        line_bot_api.reply_message(event.reply_token, send_message)
         logger.debug(f"成功回覆訊息給 {get_sender_id(event)}")
     except Exception as e:
         logger.warning(f"reply_message 失敗，改用推播: {e}")
         try:
-            line_bot_api.push_message(get_sender_id(event), TextSendMessage(text=message))
+            line_bot_api.push_message(get_chat_id(event), send_message)
         except Exception as push_error:
             logger.error(f"push_message 也失敗：{push_error}")
 
@@ -82,9 +90,10 @@ def _send_loading_request(url: str, payload: dict, action_name: str):
 def show_loading_animation(chat_id: str):
     if not config.ENABLE_LOADING_ANIMATION:
         return
+    loading_seconds = max(5, min(config.LINE_LOADING_SECONDS, 60))
     def send_loading_request():
         url = "https://api.line.me/v2/bot/chat/loading/start"
-        payload = {"chatId": chat_id, "loadingSeconds": 60}
+        payload = {"chatId": chat_id, "loadingSeconds": loading_seconds}
         _send_loading_request(url, payload, "Loading 動畫顯示")
     thread = threading.Thread(target=send_loading_request)
     thread.daemon = True
@@ -111,6 +120,6 @@ def get_or_fetch_user_name(event, sender_id: str) -> str:
         display_name = profile.display_name
         upsert_user_profile(sender_id, display_name, profile.picture_url)
         return display_name
-    except BaseException as e:
+    except Exception as e:
         logger.warning(f"無法取得用戶資料: {e}")
         return "Unknown User"

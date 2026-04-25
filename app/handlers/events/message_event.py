@@ -6,7 +6,8 @@ from app.utils.decorators import handle_exceptions, rate_limit
 from app.utils.cache import global_cache
 from app.utils.line_utils import (
     get_sender_id, get_chat_id, safe_reply, show_loading_animation, 
-    get_or_fetch_user_name, remove_repetitive_messages, clean_markdown_for_line, line_bot_api
+    get_memory_id, get_or_fetch_user_name, remove_repetitive_messages,
+    clean_markdown_for_line, line_bot_api, safe_reply_message
 )
 from app.repositories.user_repository import get_user_state, get_user_location
 from app.repositories.message_repository import save_message, get_history
@@ -20,10 +21,15 @@ from app.views.line_menus import build_quick_intro_message, build_quick_help_mes
 logger = setup_logger("message_event")
 RECENT_RESTAURANT_CACHE_TTL = 60 * 60 * 2
 RECENT_RESTAURANT_MAX_IDS = 20
+LAST_REALTIME_QUERY_TTL = 60 * 10
 
 
 def _recent_restaurant_cache_key(sender_id: str) -> str:
     return f"restaurant_recent:{sender_id}"
+
+
+def _last_realtime_query_key(memory_id: str) -> str:
+    return f"realtime_last_query:{memory_id}"
 
 
 def _get_recent_restaurant_ids(sender_id: str) -> list[str]:
@@ -198,13 +204,24 @@ def handle_restaurant_search(event, sender_id: str, user_input: str):
         safe_reply(event, "⚠️ 餐廳推薦失敗，請稍後再試")
 
 @handle_exceptions("⚠️ 即時查詢失敗")
-def handle_realtime_query(event, sender_id: str, user_input: str):
+def handle_realtime_query(event, memory_id: str, user_input: str):
     chat_id = get_chat_id(event)
     show_loading_animation(chat_id)
     try:
-        realtime_info = get_realtime_info(user_input)
-        save_message(sender_id, "user", user_input)
-        save_message(sender_id, "realtime_info", realtime_info)
+        is_detail_request = user_input.strip() == "查更詳細"
+        if is_detail_request:
+            previous_query = global_cache.get(_last_realtime_query_key(memory_id))
+            if not previous_query:
+                safe_reply(event, "我還沒有上一個即時查詢可以延伸。")
+                return
+            query_text = f"{previous_query} 更詳細"
+        else:
+            query_text = user_input
+            global_cache.set(_last_realtime_query_key(memory_id), user_input, ttl=LAST_REALTIME_QUERY_TTL)
+
+        realtime_info = get_realtime_info(query_text)
+        save_message(memory_id, "user", user_input)
+        save_message(memory_id, "realtime_info", realtime_info)
         messages = [
             {
                 "role": "system",
@@ -225,26 +242,32 @@ def handle_realtime_query(event, sender_id: str, user_input: str):
             {
                 "role": "user",
                 "content": (
-                    f"使用者問題：{user_input}\n\n"
+                    f"使用者問題：{query_text}\n\n"
                     f"即時資料：\n{realtime_info}"
                 )
             }
         ]
         reply = query_gemini(messages)
         reply = clean_markdown_for_line(reply)
-        safe_reply(event, reply)
+        msg = TextSendMessage(
+            text=reply,
+            quick_reply=QuickReply(items=[
+                QuickReplyButton(action=MessageAction(label="查更詳細", text="查更詳細"))
+            ])
+        )
+        safe_reply_message(event, msg)
     except Exception as e:
         logger.error(f"即時查詢失敗: {e}")
         safe_reply(event, "⚠️ 即時查詢失敗，請稍後再試")
 
 @handle_exceptions("⚠️ 對話處理失敗")
-def handle_gemini_conversation(event, sender_id: str, user_input: str):
+def handle_gemini_conversation(event, sender_id: str, memory_id: str, user_input: str):
     chat_id = get_chat_id(event)
     show_loading_animation(chat_id)
     
-    save_message(sender_id, "user", user_input)
+    save_message(memory_id, "user", user_input)
     user_name = get_or_fetch_user_name(event, sender_id)
-    is_admin = user_name in config.ADMIN_USERS or sender_id in config.ADMIN_USERS
+    is_admin = sender_id in config.ADMIN_USERS
     
     system_instruction = (
         f"你是G-Bot，G-MAN{'以及所有管理員' if is_admin else ''}是你老大。"
@@ -261,14 +284,14 @@ def handle_gemini_conversation(event, sender_id: str, user_input: str):
     )
     
     messages = [{"role": "system", "content": system_instruction}]
-    messages += get_history(sender_id)
+    messages += get_history(memory_id)
     messages = remove_repetitive_messages(messages)
     
     reply = query_gemini(messages)
     reply = clean_markdown_for_line(reply)
     reply = _force_clarify_when_name_query_looks_ambiguous(user_input, reply)
     
-    save_message(sender_id, "assistant", reply)
+    save_message(memory_id, "assistant", reply)
     safe_reply(event, reply)
 
 @handle_exceptions("⚠️ 特殊回覆處理失敗")
@@ -285,10 +308,15 @@ def handle_special_reply(event, special_type: str, sender_id: str):
 @rate_limit(calls_per_minute=30)
 def handle_message(event):
     sender_id = get_sender_id(event)
+    chat_id = get_chat_id(event)
+    memory_id = get_memory_id(event)
     user_input = event.message.text.strip()
     
     command_context = {
         "sender_id": sender_id,
+        "chat_id": chat_id,
+        "state_id": chat_id,
+        "memory_id": memory_id,
         "event": event,
         "source_type": event.source.type
     }
@@ -298,14 +326,14 @@ def handle_message(event):
         if command_result.success:
             if command_result.message.startswith("SPECIAL_REPLY:"):
                 special_type = command_result.message.replace("SPECIAL_REPLY:", "")
-                handle_special_reply(event, special_type, sender_id)
+                handle_special_reply(event, special_type, chat_id)
             else:
                 safe_reply(event, command_result.message)
         else:
             safe_reply(event, command_result.message)
         return
 
-    state = get_user_state(sender_id)
+    state = get_user_state(chat_id)
     if "silent" in state:
         if "mention" in state:
             safe_reply(event, "⚠️ 我現在是靜音狀態，請先取消靜音我才會回覆你ㄛ。")
@@ -315,14 +343,17 @@ def handle_message(event):
         if not any(kw in user_input.lower() for kw in config.MENTION_KEYWORDS):
             return
         else:
-            user_input = user_input.lower().replace(config.MENTION_KEYWORDS[0], "").strip()
+            lowered_input = user_input.lower()
+            for keyword in config.MENTION_KEYWORDS:
+                lowered_input = lowered_input.replace(keyword, "")
+            user_input = lowered_input.strip()
         
     if "吃什麼" in user_input:
         handle_restaurant_search(event, sender_id, user_input)
         return
 
-    if needs_realtime_info(user_input):
-        handle_realtime_query(event, sender_id, user_input)
+    if user_input == "查更詳細" or needs_realtime_info(user_input):
+        handle_realtime_query(event, memory_id, user_input)
         return
 
-    handle_gemini_conversation(event, sender_id, user_input)
+    handle_gemini_conversation(event, sender_id, memory_id, user_input)

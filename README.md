@@ -24,6 +24,7 @@ G-Bot 是一個功能豐富的 LINE 聊天機器人，整合了 Google Gemini AI
 
 ### 📰 即時資訊查詢
 - **新聞與網頁搜尋**：輸入「XXX新聞」、「查一下 XXX」或「XXX 最新消息」取得即時搜尋結果
+- **查更詳細**：即時查詢後可延伸上一個查詢
 - **天氣查詢**：輸入「XXX天氣」取得五日天氣預報
 - **NBA 資訊**：輸入「NBA戰績」或「NBA比賽」取得最新賽事資訊
 - **時間查詢**：取得當前時間資訊
@@ -32,6 +33,7 @@ G-Bot 是一個功能豐富的 LINE 聊天機器人，整合了 Google Gemini AI
 - 設定每日重複提醒或一次性提醒
 - 自然語言解析：「提醒我開會 14:30 每天」
 - 提醒列表管理與刪除功能
+- 支援「我的設定」查看目前回覆模式與地震通知設定
 
 ### 🔧 機器人控制
 - **#安靜**：啟用靜音模式
@@ -41,9 +43,13 @@ G-Bot 是一個功能豐富的 LINE 聊天機器人，整合了 Google Gemini AI
 - **#狀態**：查看當前狀態
 - **#功能**：查看功能列表
 - **#清除**：清除對話歷史
+- **我的設定**：查看目前設定
+- **地震通知開 / 地震通知關**：開關地震通知
+- **地震門檻 4.5**：設定地震通知最低規模
 
 ### 🔍 其他功能
 - 地震監控與通知（預設每 20 秒檢查，規模 4.0 以上地震）
+- 地震通知訂閱、取消訂閱與個別規模門檻設定
 - 排程通知系統
 - 效能監控與指標收集
 - 速率限制保護（30次/分鐘）
@@ -81,6 +87,7 @@ GEMINI_MODEL=gemma-4-26b-a4b-it
 GEMINI_TEMPERATURE=0.7
 GEMINI_MAX_TOKENS=2048
 DATABASE_URL=postgresql://username:password@localhost:5432/gbot_db
+CWA_API_KEY=your_cwa_api_key
 GOOGLE_MAPS_API_KEY=your_google_maps_api_key
 WEATHER_API_KEY=your_weather_api_key
 TAVILY_API_KEY=your_tavily_api_key
@@ -88,9 +95,11 @@ TAVILY_SEARCH_MAX_RESULTS=5
 TAVILY_SEARCH_DEPTH=basic
 TAVILY_SEARCH_TOPIC=general
 TAVILY_INCLUDE_ANSWER=true
+TAVILY_CACHE_TTL=600
 MENTION_KEYWORDS=@G-bot
-ADMIN_USERS=G-MAN,以馨,陳均葦
+ADMIN_USERS=Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ENABLE_LOADING_ANIMATION=true
+LINE_LOADING_SECONDS=20
 DEFAULT_SEARCH_RADIUS=1500
 NEAR_RADIUS=500
 FAR_RADIUS=2500
@@ -99,6 +108,7 @@ EARTHQUAKE_MIN_MAGNITUDE=4.0
 EARTHQUAKE_MAX_LATENCY=900
 PORT=8787
 LOG_LEVEL=INFO
+CORS_ALLOW_ORIGINS=
 ```
 
 4. **資料庫設定**
@@ -142,6 +152,7 @@ docker run -d \
 | `GEMINI_TEMPERATURE` | 可選 | AI 回應溫度（預設：0.7） |
 | `GEMINI_MAX_TOKENS` | 可選 | AI 回應最大 token 數（預設：2048） |
 | `DATABASE_URL` | 必要 | PostgreSQL 資料庫連接字串 |
+| `CWA_API_KEY` | 可選 | 中央氣象署 API 金鑰（天氣與地震功能） |
 | `GOOGLE_MAPS_API_KEY` | 可選 | Google Maps API 金鑰（餐廳推薦功能） |
 | `WEATHER_API_KEY` | 可選 | 天氣 API 金鑰 |
 | `TAVILY_API_KEY` | 可選 | Tavily Search API 金鑰（一般網頁搜尋） |
@@ -149,9 +160,11 @@ docker run -d \
 | `TAVILY_SEARCH_DEPTH` | 可選 | Tavily 搜尋深度：`basic` 或 `advanced`（預設：basic） |
 | `TAVILY_SEARCH_TOPIC` | 可選 | Tavily 搜尋類型：`general`、`news` 或 `finance`（預設：general） |
 | `TAVILY_INCLUDE_ANSWER` | 可選 | 是否要求 Tavily 回傳搜尋摘要（預設：true） |
+| `TAVILY_CACHE_TTL` | 可選 | Tavily 搜尋快取秒數（預設：600） |
 | `MENTION_KEYWORDS` | 可選 | 標記關鍵字（預設：@G-bot） |
-| `ADMIN_USERS` | 可選 | 管理員名稱清單 |
+| `ADMIN_USERS` | 可選 | 管理員 LINE user ID 清單 |
 | `ENABLE_LOADING_ANIMATION` | 可選 | 啟用 Loading 動畫（預設：true） |
+| `LINE_LOADING_SECONDS` | 可選 | LINE Loading 動畫秒數，5 到 60 秒（預設：20） |
 | `DEFAULT_SEARCH_RADIUS` | 可選 | 餐廳搜尋預設半徑，單位公尺（預設：1500） |
 | `NEAR_RADIUS` | 可選 | 「附近」餐廳搜尋半徑，單位公尺（預設：500） |
 | `FAR_RADIUS` | 可選 | 「遠一點」餐廳搜尋半徑，單位公尺（預設：2500） |
@@ -160,6 +173,7 @@ docker run -d \
 | `EARTHQUAKE_MAX_LATENCY` | 可選 | 地震資料最大延遲，單位秒（預設：900） |
 | `PORT` | 可選 | 本地或容器服務端口（預設：8787） |
 | `LOG_LEVEL` | 可選 | 日誌等級（預設：INFO） |
+| `CORS_ALLOW_ORIGINS` | 可選 | 允許的 CORS origins，逗號分隔；空值代表不開放瀏覽器跨域 |
 
 ## 🏗️ 專案架構
 

@@ -5,11 +5,13 @@ from typing import Any
 import requests
 
 from app.config import config
+from app.utils.cache import global_cache
 
 logger = logging.getLogger(__name__)
 
 TAVILY_SEARCH_URL = "https://api.tavily.com/search"
 NEWS_QUERY_KEYWORDS = ("新聞", "最新", "今天", "現在", "目前", "剛剛", "即時")
+DETAIL_QUERY_KEYWORDS = ("更詳細", "詳細", "深入")
 
 
 def _normalize_search_item(item: dict[str, Any]) -> dict[str, str]:
@@ -33,11 +35,16 @@ def get_tavily_search_results(query: str, limit: int | None = None) -> str:
     max_results = max(1, min(max_results, 20))
 
     topic = "news" if any(keyword in query for keyword in NEWS_QUERY_KEYWORDS) else config.TAVILY_SEARCH_TOPIC
+    search_depth = "advanced" if any(keyword in query for keyword in DETAIL_QUERY_KEYWORDS) else config.TAVILY_SEARCH_DEPTH
+    cache_key = f"tavily:{topic}:{search_depth}:{max_results}:{query.lower()}"
+    cached_result = global_cache.get(cache_key)
+    if cached_result:
+        return cached_result
 
     payload = {
         "query": query,
         "topic": topic,
-        "search_depth": config.TAVILY_SEARCH_DEPTH,
+        "search_depth": search_depth,
         "max_results": max_results,
         "include_answer": config.TAVILY_INCLUDE_ANSWER,
         "include_raw_content": False,
@@ -54,17 +61,25 @@ def get_tavily_search_results(query: str, limit: int | None = None) -> str:
     except requests.exceptions.HTTPError as e:
         status_code = e.response.status_code if e.response is not None else "unknown"
         logger.error("Tavily Search HTTP error: %s", e)
-        return f"Tavily 搜尋失敗，HTTP 狀態碼：{status_code}。"
+        result_text = f"Tavily 搜尋失敗，HTTP 狀態碼：{status_code}。"
+        global_cache.set(cache_key, result_text, ttl=60)
+        return result_text
     except requests.exceptions.RequestException as e:
         logger.error("Tavily Search request error: %s", e)
-        return "Tavily 搜尋請求失敗，請稍後再試。"
+        result_text = "Tavily 搜尋請求失敗，請稍後再試。"
+        global_cache.set(cache_key, result_text, ttl=60)
+        return result_text
     except ValueError as e:
         logger.error("Tavily Search JSON parse error: %s", e)
-        return "Tavily 搜尋回傳格式錯誤，請稍後再試。"
+        result_text = "Tavily 搜尋回傳格式錯誤，請稍後再試。"
+        global_cache.set(cache_key, result_text, ttl=60)
+        return result_text
 
     results = data.get("results") or []
     if not results:
-        return f"查無「{query}」的 Tavily 搜尋結果。"
+        result_text = f"查無「{query}」的 Tavily 搜尋結果。"
+        global_cache.set(cache_key, result_text, ttl=config.TAVILY_CACHE_TTL)
+        return result_text
 
     lines = [f"使用者查詢：{data.get('query') or query}"]
 
@@ -83,4 +98,6 @@ def get_tavily_search_results(query: str, limit: int | None = None) -> str:
             ])
         )
 
-    return "\n\n".join(lines)
+    result_text = "\n\n".join(lines)
+    global_cache.set(cache_key, result_text, ttl=config.TAVILY_CACHE_TTL)
+    return result_text

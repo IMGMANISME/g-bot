@@ -52,7 +52,7 @@ class Config:
     
     # 管理員配置
     ADMIN_USERS: List[str] = field(
-        default_factory=lambda: _get_list("ADMIN_USERS", "G-MAN,以馨,陳均葦")
+        default_factory=lambda: _get_list("ADMIN_USERS", "")
     )
     
     # 地震監控配置
@@ -62,6 +62,7 @@ class Config:
     
     # Loading Animation 配置
     ENABLE_LOADING_ANIMATION: bool = os.getenv("ENABLE_LOADING_ANIMATION", "true").lower() == "true"
+    LINE_LOADING_SECONDS: int = _get_int("LINE_LOADING_SECONDS", 20)
     
     # 餐廳搜尋預設值
     DEFAULT_SEARCH_RADIUS: int = _get_int("DEFAULT_SEARCH_RADIUS", 1500)
@@ -74,6 +75,12 @@ class Config:
     TAVILY_SEARCH_DEPTH: str = os.getenv("TAVILY_SEARCH_DEPTH", "basic")
     TAVILY_SEARCH_TOPIC: str = os.getenv("TAVILY_SEARCH_TOPIC", "general")
     TAVILY_INCLUDE_ANSWER: bool = os.getenv("TAVILY_INCLUDE_ANSWER", "true").lower() == "true"
+    TAVILY_CACHE_TTL: int = _get_int("TAVILY_CACHE_TTL", 600)
+
+    # CORS 配置
+    CORS_ALLOW_ORIGINS: List[str] = field(
+        default_factory=lambda: _get_list("CORS_ALLOW_ORIGINS", "")
+    )
 
 # 全域配置實例
 config = Config()

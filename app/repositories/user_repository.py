@@ -43,27 +43,76 @@ def is_mention_mode(sender_id: str) -> bool:
         return state.mention_mode if state else False
 
 def get_user_state(sender_id: str) -> str:
+    get_or_create_user_state(sender_id)
     silent = is_silent(sender_id)
     mention = is_mention_mode(sender_id)
     
     if silent and mention:
         return "silent_mention"
     elif silent and not mention:
-        return "silent_active"
+        return "silent"
     elif not silent and mention:
-        return "active_mention"
+        return "mention"
     return "active"
 
 def set_user_state(sender_id: str, state: str):
-    if state == "silent":
+    if state in ["silent", "silent_mention"]:
         set_silent(sender_id)
     else:
         clear_silent(sender_id)
 
-    if state == "mention_only":
+    if state in ["mention", "mention_only", "silent_mention"]:
         set_mention_mode(sender_id, True)
     else:
         set_mention_mode(sender_id, False)
+
+def get_or_create_user_state(sender_id: str) -> UserState:
+    with SessionLocal() as db:
+        state = db.query(UserState).filter_by(sender_id=sender_id).first()
+        if not state:
+            state = UserState(sender_id=sender_id)
+            db.add(state)
+            db.commit()
+            db.refresh(state)
+        return state
+
+def set_earthquake_subscription(sender_id: str, enabled: bool):
+    with SessionLocal() as db:
+        state = db.query(UserState).filter_by(sender_id=sender_id).first()
+        if not state:
+            state = UserState(sender_id=sender_id)
+            db.add(state)
+        state.earthquake_enabled = enabled
+        db.commit()
+
+def set_earthquake_min_magnitude(sender_id: str, magnitude: float):
+    with SessionLocal() as db:
+        state = db.query(UserState).filter_by(sender_id=sender_id).first()
+        if not state:
+            state = UserState(sender_id=sender_id)
+            db.add(state)
+        state.earthquake_enabled = True
+        state.earthquake_min_magnitude = magnitude
+        db.commit()
+
+def get_earthquake_settings(sender_id: str) -> dict:
+    with SessionLocal() as db:
+        state = db.query(UserState).filter_by(sender_id=sender_id).first()
+        return {
+            "enabled": state.earthquake_enabled if state and state.earthquake_enabled is not None else True,
+            "min_magnitude": state.earthquake_min_magnitude if state else None,
+        }
+
+def get_earthquake_recipient_ids(magnitude: float, default_min_magnitude: float) -> list[str]:
+    with SessionLocal() as db:
+        states = db.query(UserState).all()
+        recipients = []
+        for state in states:
+            enabled = state.earthquake_enabled if state.earthquake_enabled is not None else True
+            min_magnitude = state.earthquake_min_magnitude or default_min_magnitude
+            if enabled and magnitude >= min_magnitude:
+                recipients.append(state.sender_id)
+        return recipients
 
 def upsert_user_location(sender_id: str, lat: float, lng: float):
     with SessionLocal() as db:

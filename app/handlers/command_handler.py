@@ -38,31 +38,31 @@ class StatusCommandHandler(BaseCommandHandler):
     def handle(self, command: str, context: dict) -> CommandResult:
         from app.repositories.user_repository import get_user_state, set_user_state
         
-        sender_id = context.get("sender_id")
+        state_id = context.get("state_id") or context.get("chat_id") or context.get("sender_id")
         command_lower = command.lower()
         
         if command_lower == "#狀態":
-            status = self._get_user_states_cn(sender_id)
+            status = self._get_user_states_cn(state_id)
             return CommandResult(True, f"狀態：{status}")
         
         elif command_lower == "#安靜":
-            current_state = get_user_state(sender_id)
+            current_state = get_user_state(state_id)
             new_state = "silent_mention" if "mention" in current_state else "silent"
-            set_user_state(sender_id, new_state)
+            set_user_state(state_id, new_state)
             return CommandResult(True, "⏸️ 我會保持安靜。")
         
         elif command_lower == "#說話":
-            current_state = get_user_state(sender_id)
-            new_state = "mention_only" if "mention" in current_state else "active"
-            set_user_state(sender_id, new_state)
+            current_state = get_user_state(state_id)
+            new_state = "mention" if "mention" in current_state else "active"
+            set_user_state(state_id, new_state)
             return CommandResult(True, "▶️ 我又可以說話囉！")
         
         elif command_lower == "#標記":
-            set_user_state(sender_id, "mention_only")
+            set_user_state(state_id, "mention")
             return CommandResult(True, "📌 標記我模式開啟。")
         
         elif command_lower == "#都回":
-            set_user_state(sender_id, "active")
+            set_user_state(state_id, "active")
             return CommandResult(True, "✅ 所有訊息我都會回覆。")
         
         return CommandResult(False, "未知的狀態命令")
@@ -73,8 +73,8 @@ class StatusCommandHandler(BaseCommandHandler):
         status = get_user_state(sender_id)
         status_map = {
             "active": "正常運作中～",
-            "silent_active": "靜音中～絕對不會打擾你！",
-            "active_mention": "標記我模式開啟～只有在被標記時才會回覆！",
+            "silent": "靜音中～絕對不會打擾你！",
+            "mention": "標記我模式開啟～只有在被標記時才會回覆！",
             "silent_mention": "靜音跟標記我模式都開啟中～取消靜音後也只有在被標記時才會回覆！"
         }
         return status_map.get(status, "罷工中～請稍後再試！")
@@ -83,7 +83,7 @@ class UtilityCommandHandler(BaseCommandHandler):
     """工具類命令處理器"""
     
     def can_handle(self, command: str, context: dict) -> bool:
-        return command.lower() in ["#功能", "#清除", "#選單", "#幫助"]
+        return command.lower() in ["#功能", "#清除", "#選單", "#幫助", "我的設定", "#設定"]
     
     @handle_exceptions("⚠️ 命令執行失敗")
     def handle(self, command: str, context: dict) -> CommandResult:
@@ -97,21 +97,89 @@ class UtilityCommandHandler(BaseCommandHandler):
                 "• 未來五日縣市天氣查詢 - 輸入「...天氣」\n"
                 "• 即時NBA戰績/比分查詢 - 輸入「...戰績」或「...比賽」\n"
                 "• 每日提醒 - 輸入「我的提醒」\n"
+                "• 地震通知 - 輸入「地震通知開」、「地震通知關」或「地震門檻 4.5」\n"
+                "• 我的設定 - 查看回覆模式與地震通知\n"
                 "• 任意查詢 - 問我任何問題，我都會盡力回覆ㄛ～"
             )
             return CommandResult(True, function_text)
         
         elif command_lower == "#清除":
             from app.repositories.message_repository import clear_history
-            sender_id = context.get("sender_id")
-            clear_history(sender_id)
+            memory_id = context.get("memory_id") or context.get("sender_id")
+            clear_history(memory_id)
             return CommandResult(True, "✅ 已清除對話紀錄。")
         
+        elif command_lower in ["我的設定", "#設定"]:
+            return CommandResult(True, self._build_settings_text(context))
+
         elif command_lower in ["#選單", "#幫助"]:
             # 這些需要特殊的 quick reply 處理，返回特殊標記
             return CommandResult(True, f"SPECIAL_REPLY:{command_lower}")
         
         return CommandResult(False, "未知的工具命令")
+
+    def _build_settings_text(self, context: dict) -> str:
+        from app.repositories.user_repository import get_user_state, get_earthquake_settings
+        from app.config import config
+
+        state_id = context.get("state_id") or context.get("chat_id") or context.get("sender_id")
+        status = get_user_state(state_id)
+        status_map = {
+            "active": "所有訊息都回",
+            "silent": "靜音",
+            "mention": "只在被標記時回",
+            "silent_mention": "靜音 + 標記模式",
+        }
+        earthquake = get_earthquake_settings(state_id)
+        min_magnitude = earthquake["min_magnitude"] or config.EARTHQUAKE_MIN_MAGNITUDE
+        return (
+            "目前設定：\n"
+            f"回覆模式：{status_map.get(status, status)}\n"
+            f"地震通知：{'開' if earthquake['enabled'] else '關'}\n"
+            f"地震門檻：規模 {min_magnitude}"
+        )
+
+class EarthquakeCommandHandler(BaseCommandHandler):
+    """地震通知設定命令處理器"""
+
+    def can_handle(self, command: str, context: dict) -> bool:
+        return any(keyword in command for keyword in ["地震通知", "地震門檻", "地震設定"])
+
+    @handle_exceptions("⚠️ 地震設定失敗")
+    def handle(self, command: str, context: dict) -> CommandResult:
+        import re
+        from app.config import config
+        from app.repositories.user_repository import (
+            set_earthquake_subscription,
+            set_earthquake_min_magnitude,
+            get_earthquake_settings,
+        )
+
+        state_id = context.get("state_id") or context.get("chat_id") or context.get("sender_id")
+        normalized = command.strip().lower()
+
+        if any(word in normalized for word in ["關", "停", "off", "取消"]):
+            set_earthquake_subscription(state_id, False)
+            return CommandResult(True, "地震通知已關閉。")
+
+        if any(word in normalized for word in ["開", "啟用", "on"]):
+            set_earthquake_subscription(state_id, True)
+            return CommandResult(True, "地震通知已開啟。")
+
+        match = re.search(r"地震門檻\s*(\d+(?:\.\d+)?)", command)
+        if match:
+            magnitude = float(match.group(1))
+            if magnitude < 0 or magnitude > 10:
+                return CommandResult(False, "地震門檻請設定 0 到 10 之間的規模。")
+            set_earthquake_min_magnitude(state_id, magnitude)
+            return CommandResult(True, f"地震通知門檻已改成規模 {magnitude}。")
+
+        settings = get_earthquake_settings(state_id)
+        min_magnitude = settings["min_magnitude"] or config.EARTHQUAKE_MIN_MAGNITUDE
+        return CommandResult(
+            True,
+            f"地震通知：{'開' if settings['enabled'] else '關'}\n地震門檻：規模 {min_magnitude}"
+        )
 
 class ReminderCommandHandler(BaseCommandHandler):
     """提醒相關命令處理器"""
@@ -127,7 +195,7 @@ class ReminderCommandHandler(BaseCommandHandler):
             delete_all_notifications_for_user
         )
         
-        sender_id = context.get("sender_id")
+        sender_id = context.get("chat_id") or context.get("sender_id")
         
         # 設定提醒
         if "提醒我" in command:
@@ -188,6 +256,7 @@ class CommandProcessor:
         self.handlers = [
             StatusCommandHandler(),
             UtilityCommandHandler(),
+            EarthquakeCommandHandler(),
             ReminderCommandHandler(),
         ]
     

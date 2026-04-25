@@ -112,6 +112,12 @@ def rate_limit(calls_per_minute: int = 60):
             # 檢查是否超過限制
             if len(call_times[caller_id]) >= calls_per_minute:
                 logger.warning(f"用戶 {caller_id} 觸發速率限制")
+                if args and hasattr(args[0], 'reply_token'):
+                    try:
+                        from app.utils.line_utils import safe_reply
+                        safe_reply(args[0], "⚠️ 請求過於頻繁，請稍後再試")
+                    except Exception:
+                        pass
                 return "⚠️ 請求過於頻繁，請稍後再試"
             
             # 記錄此次調用

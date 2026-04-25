@@ -5,9 +5,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.utils.line_utils import push_line_message_to_users
-from app.database import SessionLocal
-from app.models.user import UserState
 from app.config import config
+from app.repositories.user_repository import get_earthquake_recipient_ids
 from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions
 
@@ -87,15 +86,6 @@ def fetch_earthquake_data() -> Optional[dict]:
         logger.error(f"解析地震資料失敗: {e}")
         return None
 
-def get_all_user_ids() -> list[str]:
-    """取得所有用戶ID"""
-    try:
-        with SessionLocal() as db:
-            users = db.query(UserState).all()
-            return [user.sender_id for user in users]
-    except Exception as e:
-        logger.error(f"取得用戶列表失敗: {e}")
-        return []
 def check_earthquake_job(min_magnitude: float = 4.0):
     """
     執行單次地震檢查作業
@@ -146,8 +136,8 @@ def check_earthquake_job(min_magnitude: float = 4.0):
         # 建立推播訊息
         message = create_earthquake_message(magnitude, earthquake_time, location)
         
-        # 取得用戶列表並推播 (支援傳遞 image_url)
-        user_ids = get_all_user_ids()
+        # 取得符合訂閱與門檻設定的聊天室列表並推播
+        user_ids = get_earthquake_recipient_ids(magnitude, min_magnitude)
         if user_ids:
             logger.info(f"🚨 地震推播: 規模 {magnitude}，推送給 {len(user_ids)} 位用戶")
             push_line_message_to_users(message, user_ids, image_url=image_url)
