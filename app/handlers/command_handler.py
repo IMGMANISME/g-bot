@@ -1,5 +1,6 @@
 # app/handlers/command_handler.py
 """命令處理器模組"""
+import re
 from typing import Optional, Tuple
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -260,8 +261,37 @@ class CommandProcessor:
             ReminderCommandHandler(),
         ]
     
+    def _normalize_command(self, command: str, context: dict) -> str:
+        """Normalize command text before handler matching.
+
+        Group users often invoke commands by mentioning the bot first, e.g.
+        "@G-bot #狀態".  Handlers should still receive the real command text.
+        """
+        normalized = command.strip()
+
+        mention_keywords = context.get("mention_keywords") or []
+        if not mention_keywords:
+            try:
+                from app.config import config
+                mention_keywords = config.MENTION_KEYWORDS
+            except Exception:
+                mention_keywords = []
+
+        for keyword in sorted(mention_keywords, key=lambda value: len(str(value)), reverse=True):
+            keyword = str(keyword).strip()
+            if not keyword:
+                continue
+
+            pattern = rf"^\s*{re.escape(keyword)}(?:\s|　|:|：|,|，)*"
+            updated = re.sub(pattern, "", normalized, count=1, flags=re.IGNORECASE).strip()
+            if updated != normalized:
+                return updated
+
+        return normalized
+
     def process_command(self, command: str, context: dict) -> Optional[CommandResult]:
         """處理命令"""
+        command = self._normalize_command(command, context)
         for handler in self.handlers:
             if handler.can_handle(command, context):
                 logger.info(f"使用處理器 {handler.__class__.__name__} 處理命令: {command}")

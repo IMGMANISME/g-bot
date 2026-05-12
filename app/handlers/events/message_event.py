@@ -318,7 +318,8 @@ def handle_message(event):
         "state_id": chat_id,
         "memory_id": memory_id,
         "event": event,
-        "source_type": event.source.type
+        "source_type": event.source.type,
+        "mention_keywords": config.MENTION_KEYWORDS
     }
     
     command_result = command_processor.process_command(user_input, command_context)
