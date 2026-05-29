@@ -15,6 +15,7 @@ from linebot.exceptions import InvalidSignatureError
 from app.line_bot import handle_events
 from app.database import init_db
 from app.earthquake import setup_earthquake_job
+from app.pws_alert import setup_pws_alert_job
 from app.schedule_notification import start_scheduler
 from app.config import config, validate_config
 from app.utils.logger import setup_logger
@@ -50,6 +51,12 @@ async def lifespan(app: FastAPI):
             min_magnitude=config.EARTHQUAKE_MIN_MAGNITUDE
         )
         logger.info("✅ 地震監控任務已註冊")
+
+        setup_pws_alert_job(
+            scheduler,
+            interval=config.PWS_ALERT_CHECK_INTERVAL,
+        )
+        logger.info("✅ PWS 地震速報任務已檢查")
         
         # 啟動所有排程任務
         start_scheduler()

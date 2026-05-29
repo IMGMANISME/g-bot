@@ -48,7 +48,8 @@ G-Bot 是一個功能豐富的 LINE 聊天機器人，整合了 Google Gemini AI
 - **地震門檻 4.5**：設定地震通知最低規模
 
 ### 🔍 其他功能
-- 地震監控與通知（預設每 20 秒檢查，規模 4.0 以上地震）
+- PWS/CAP 地震速報監控（預設每 10 秒檢查）
+- 地震報告監控與通知（預設每 20 秒檢查，規模 4.0 以上地震）
 - 地震通知訂閱、取消訂閱與個別規模門檻設定
 - 排程通知系統
 - 效能監控與指標收集
@@ -153,6 +154,8 @@ docker run -d \
 | `GEMINI_MAX_TOKENS` | 可選 | AI 回應最大 token 數（預設：2048） |
 | `DATABASE_URL` | 必要 | PostgreSQL 資料庫連接字串 |
 | `CWA_API_KEY` | 可選 | 中央氣象署 API 金鑰（天氣與地震功能） |
+| `NCDR_API_KEY` | 可選 | NCDR 災防告警 API 金鑰（PWS/CAP 地震速報） |
+| `NCDR_API_KEY_PARAM` | 可選 | NCDR API key 查詢參數名稱（預設：apikey） |
 | `GOOGLE_MAPS_API_KEY` | 可選 | Google Maps API 金鑰（餐廳推薦功能） |
 | `WEATHER_API_KEY` | 可選 | 天氣 API 金鑰 |
 | `TAVILY_API_KEY` | 可選 | Tavily Search API 金鑰（一般網頁搜尋） |
@@ -171,6 +174,12 @@ docker run -d \
 | `EARTHQUAKE_CHECK_INTERVAL` | 可選 | 地震監控檢查間隔，單位秒（預設：20） |
 | `EARTHQUAKE_MIN_MAGNITUDE` | 可選 | 地震通知最低規模（預設：4.0） |
 | `EARTHQUAKE_MAX_LATENCY` | 可選 | 地震資料最大延遲，單位秒（預設：900） |
+| `PWS_ALERT_CHECK_INTERVAL` | 可選 | PWS/CAP 地震速報檢查間隔，單位秒（預設：10） |
+| `PWS_ALERT_MAX_LATENCY` | 可選 | PWS/CAP 地震速報最大延遲，單位秒（預設：180） |
+| `PWS_ALERT_KEYWORDS` | 可選 | PWS/CAP 地震速報關鍵字，逗號分隔 |
+| `NCDR_API_BASE_URL` | 可選 | NCDR API 根路徑（預設：https://alerts.ncdr.nat.gov.tw/api） |
+| `NCDR_DATASTORE_URL` | 可選 | 自訂 NCDR datastore 或 CAP JSON 清單 URL |
+| `NCDR_DUMP_URL` | 可選 | 自訂 NCDR dump 詳細內容 URL |
 | `PORT` | 可選 | 本地或容器服務端口（預設：8787） |
 | `LOG_LEVEL` | 可選 | 日誌等級（預設：INFO） |
 | `CORS_ALLOW_ORIGINS` | 可選 | 允許的 CORS origins，逗號分隔；空值代表不開放瀏覽器跨域 |
