@@ -59,18 +59,6 @@ class Config:
     EARTHQUAKE_CHECK_INTERVAL: int = _get_int("EARTHQUAKE_CHECK_INTERVAL", 20)
     EARTHQUAKE_MIN_MAGNITUDE: float = _get_float("EARTHQUAKE_MIN_MAGNITUDE", 4.0)
     EARTHQUAKE_MAX_LATENCY: int = _get_int("EARTHQUAKE_MAX_LATENCY", 900)  # 15 minutes
-
-    # PWS/CAP 即時示警配置
-    NCDR_API_KEY: str = os.getenv("NCDR_API_KEY")
-    NCDR_API_KEY_PARAM: str = os.getenv("NCDR_API_KEY_PARAM", "apikey")
-    NCDR_API_BASE_URL: str = os.getenv("NCDR_API_BASE_URL", "https://alerts.ncdr.nat.gov.tw/api")
-    NCDR_DATASTORE_URL: str = os.getenv("NCDR_DATASTORE_URL")
-    NCDR_DUMP_URL: str = os.getenv("NCDR_DUMP_URL")
-    PWS_ALERT_CHECK_INTERVAL: int = _get_int("PWS_ALERT_CHECK_INTERVAL", 10)
-    PWS_ALERT_MAX_LATENCY: int = _get_int("PWS_ALERT_MAX_LATENCY", 180)
-    PWS_ALERT_KEYWORDS: List[str] = field(
-        default_factory=lambda: _get_list("PWS_ALERT_KEYWORDS", "地震速報,強震即時警報,Earthquake", lowercase=True)
-    )
     
     # Loading Animation 配置
     ENABLE_LOADING_ANIMATION: bool = os.getenv("ENABLE_LOADING_ANIMATION", "true").lower() == "true"

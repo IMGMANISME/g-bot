@@ -114,16 +114,6 @@ def get_earthquake_recipient_ids(magnitude: float, default_min_magnitude: float)
                 recipients.append(state.sender_id)
         return recipients
 
-def get_earthquake_subscriber_ids() -> list[str]:
-    with SessionLocal() as db:
-        states = db.query(UserState).all()
-        recipients = []
-        for state in states:
-            enabled = state.earthquake_enabled if state.earthquake_enabled is not None else True
-            if enabled:
-                recipients.append(state.sender_id)
-        return recipients
-
 def upsert_user_location(sender_id: str, lat: float, lng: float):
     with SessionLocal() as db:
         location = db.query(UserLocation).filter_by(sender_id=sender_id).first()

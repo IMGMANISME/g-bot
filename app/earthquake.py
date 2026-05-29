@@ -47,7 +47,7 @@ def is_recent_earthquake(earthquake_time: datetime, max_latency_seconds: int = 9
 def create_earthquake_message(magnitude: float, earthquake_time: datetime, location: str) -> str:
     """建立地震推播訊息"""
     return (
-        f"🌍【地震報告】\n\n"
+        f"🌍【地震速報】\n\n"
         f"📍 震央：{location}\n"
         f"⏰ 時間：{earthquake_time.strftime('%m/%d %H:%M')}\n"
         f"💥 規模：{magnitude}"
