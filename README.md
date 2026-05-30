@@ -119,6 +119,27 @@ CORS_ALLOW_ORIGINS=
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8787 --reload
 ```
 
+### Railway 雲端部署
+
+1. **推送代碼到 GitHub**
+2. **登入 [Railway](https://railway.com) 並建立新 Project**
+3. **從 GitHub repo 建立服務**
+4. **新增 PostgreSQL 服務**
+5. **將 PostgreSQL 服務提供的 `DATABASE_URL` 加到 Web 服務環境變數**
+6. **設定 `.env.example` 中列出的必要環境變數**
+7. **部署完成後確認 `/health` 回傳 healthy**
+8. **到 LINE Developers 將 Webhook URL 改成 Railway 網址**
+
+Webhook URL 範例：
+
+```text
+https://your-service.up.railway.app/callback
+```
+
+Railway 會自動注入 `PORT`，Dockerfile 會使用該 port 啟動 Uvicorn。此專案包含 `railway.json`，部署時會使用 `/health` 作為健康檢查端點。
+
+> 注意：此專案內建 APScheduler 背景任務，部署時建議只跑單一 Web 服務實例，避免提醒或地震通知重複推播。
+
 ### Zeabur 雲端部署
 
 1. **推送代碼到 GitHub**
