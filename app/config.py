@@ -61,6 +61,9 @@ class Config:
     ADMIN_USERS: List[str] = field(
         default_factory=lambda: _get_list("ADMIN_USERS", "")
     )
+    PRIORITY_MENTION_NAMES: List[str] = field(
+        default_factory=lambda: _get_list("PRIORITY_MENTION_NAMES", "", lowercase=True)
+    )
     
     # 地震監控配置
     EARTHQUAKE_CHECK_INTERVAL: int = _get_int("EARTHQUAKE_CHECK_INTERVAL", 20)

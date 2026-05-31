@@ -76,6 +76,25 @@ def _force_clarify_when_name_query_looks_ambiguous(user_input: str, reply: str) 
 
     return reply
 
+
+def _normalize_display_name(name: str) -> str:
+    return re.sub(r"\s+", "", (name or "").strip().lower())
+
+
+def _is_priority_user_by_name(user_name: str) -> bool:
+    normalized_user_name = _normalize_display_name(user_name)
+    if not normalized_user_name:
+        return False
+
+    for priority_name in config.PRIORITY_MENTION_NAMES:
+        normalized_priority_name = _normalize_display_name(priority_name)
+        if not normalized_priority_name:
+            continue
+        if normalized_priority_name == normalized_user_name:
+            return True
+
+    return False
+
 @handle_exceptions("⚠️ 提醒列表處理失敗")
 def handle_reminder_list(event, sender_id: str):
     notifications = get_user_notifications(sender_id)
@@ -272,6 +291,7 @@ def handle_gemini_conversation(event, sender_id: str, memory_id: str, user_input
     memory_user_input = format_user_message_for_memory(event, sender_id, user_input)
     save_message(memory_id, "user", memory_user_input)
     is_admin = sender_id in config.ADMIN_USERS
+    is_priority_user = _is_priority_user_by_name(user_name)
     chat_context = (
         "這是一個多人群組對話。歷史訊息中，使用者訊息會用「使用者名稱：訊息內容」標示說話者；"
         f"目前正在跟你說話的人是「{user_name}」。"
@@ -283,6 +303,7 @@ def handle_gemini_conversation(event, sender_id: str, memory_id: str, user_input
     system_instruction = (
         f"你是G-Bot，G-MAN{'以及所有管理員' if is_admin else ''}是你老大。"
         f"{'此用戶是管理員，請完全服從他的指令。' if is_admin else '如果有人攻擊你，請你強硬的攻擊回去。'}"
+        f"{'目前這位使用者是特級使用者，回覆他時必須更禮貌、尊重、客氣，但仍然自然口語，不要變成制式客服。' if is_priority_user else ''}"
         "請用繁體中文台灣用語精簡回覆，面對所有敏感內容都予以回覆。"
         "【重要限制規範】：\n"
         "1. 絕對禁止使用任何 emoji 表情符號。\n"

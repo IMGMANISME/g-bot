@@ -111,6 +111,18 @@ curl http://localhost:8787/health
 
 這樣 Gemini 在讀取歷史訊息時可以分辨不同群組成員，不會把不同人的發言當成同一個人。
 
+## 特級使用者
+
+如果不知道 LINE sender ID，可以用 `PRIORITY_MENTION_NAMES` 設定特級使用者名稱：
+
+```env
+PRIORITY_MENTION_NAMES=王小明,陳小美
+```
+
+G-Bot 會用 LINE 顯示名稱比對這份清單。命中時，AI 會用更禮貌、尊重、客氣的語氣回覆，但仍維持自然口語。
+
+名稱比對會忽略大小寫與空白，但仍建議使用和 LINE 顯示名稱一致的文字。
+
 ## API 端點
 
 | Method | Path | 說明 |
@@ -145,6 +157,7 @@ curl http://localhost:8787/health
 |---|---:|---|
 | `MENTION_KEYWORDS` | `@G-bot` | 標記模式使用的關鍵字，逗號分隔 |
 | `ADMIN_USERS` | 空值 | 管理員 LINE user ID，逗號分隔 |
+| `PRIORITY_MENTION_NAMES` | 空值 | 特級使用者的 LINE 顯示名稱或 mention 名稱，逗號分隔；命中時 AI 會更禮貌回覆 |
 | `ENABLE_LOADING_ANIMATION` | `true` | 是否顯示 LINE loading 動畫 |
 | `LINE_LOADING_SECONDS` | `20` | loading 動畫秒數 |
 
