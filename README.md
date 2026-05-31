@@ -143,6 +143,15 @@ G-Bot 會用 LINE 顯示名稱比對這份清單。命中時，AI 會用更禮�
 | `GEMINI_API_KEY` | Google Gemini API key |
 | `DATABASE_URL` | PostgreSQL 連線字串 |
 
+### 資料庫
+
+| 變數 | 預設值 | 說明 |
+|---|---:|---|
+| `DB_POOL_SIZE` | `2` | PostgreSQL 連線池大小 |
+| `DB_MAX_OVERFLOW` | `3` | 連線池額外允許連線數 |
+| `DB_POOL_TIMEOUT` | `30` | 取得資料庫連線的逾時秒數 |
+| `DB_POOL_RECYCLE` | `3600` | 連線回收秒數 |
+
 ### AI
 
 | 變數 | 預設值 | 說明 |

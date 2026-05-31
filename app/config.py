@@ -51,6 +51,10 @@ class Config:
     
     # 資料庫配置
     DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL")
+    DB_POOL_SIZE: int = _get_int("DB_POOL_SIZE", 2)
+    DB_MAX_OVERFLOW: int = _get_int("DB_MAX_OVERFLOW", 3)
+    DB_POOL_TIMEOUT: int = _get_int("DB_POOL_TIMEOUT", 30)
+    DB_POOL_RECYCLE: int = _get_int("DB_POOL_RECYCLE", 3600)
     
     # 應用程式配置
     MENTION_KEYWORDS: List[str] = field(

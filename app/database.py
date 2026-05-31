@@ -23,10 +23,10 @@ engine = create_engine(
     config.DATABASE_URL,
     pool_pre_ping=True,  # 檢查連接是否有效
     poolclass=QueuePool,
-    pool_size=10,        # 連接池大小
-    max_overflow=20,     # 最大溢出連接數
-    pool_recycle=3600,   # 連接回收時間（秒）
-    pool_timeout=30,     # 取得連接的超時時間
+    pool_size=config.DB_POOL_SIZE,          # 連接池大小
+    max_overflow=config.DB_MAX_OVERFLOW,    # 最大溢出連接數
+    pool_recycle=config.DB_POOL_RECYCLE,    # 連接回收時間（秒）
+    pool_timeout=config.DB_POOL_TIMEOUT,    # 取得連接的超時時間
     echo=False           # 設為 True 可顯示 SQL 語句
 )
 
