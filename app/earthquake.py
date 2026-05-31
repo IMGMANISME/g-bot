@@ -7,12 +7,17 @@ from typing import Optional
 from app.utils.line_utils import push_line_message_to_users
 from app.config import config
 from app.repositories.user_repository import get_earthquake_recipient_ids
+from app.repositories.system_state_repository import (
+    get_system_state,
+    set_system_state,
+    try_acquire_job_lock,
+)
 from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions
 
 logger = setup_logger("earthquake")
 CWA_API_KEY = os.getenv("CWA_API_KEY")
-LAST_EARTHQUAKE_ID: Optional[str] = None
+LAST_EARTHQUAKE_ID_KEY = "earthquake:last_processed_id"
 
 
 def parse_earthquake_data(latest: dict) -> tuple[Optional[float], Optional[datetime], Optional[str]]:
@@ -90,12 +95,13 @@ def check_earthquake_job(min_magnitude: float = 4.0):
     """
     執行單次地震檢查作業
     """
-    global LAST_EARTHQUAKE_ID
-    
     if not CWA_API_KEY:
         return
 
     try:
+        if not try_acquire_job_lock("earthquake", ttl_seconds=max(10, config.EARTHQUAKE_CHECK_INTERVAL - 1)):
+            return
+
         # 取得最新地震資料
         latest_earthquake = fetch_earthquake_data()
         if not latest_earthquake:
@@ -103,7 +109,11 @@ def check_earthquake_job(min_magnitude: float = 4.0):
 
         # 檢查是否為新地震
         eq_id = latest_earthquake.get("EarthquakeNo")
-        if eq_id == LAST_EARTHQUAKE_ID:
+        if not eq_id:
+            logger.warning("地震資料缺少 EarthquakeNo，跳過處理")
+            return
+
+        if eq_id == get_system_state(LAST_EARTHQUAKE_ID_KEY):
             return
 
         # 解析獨立的圖片 URL
@@ -115,23 +125,23 @@ def check_earthquake_job(min_magnitude: float = 4.0):
         # 驗證資料完整性
         if not all([magnitude, earthquake_time, location]):
             logger.warning(f"地震資料不完整，跳過處理: EQ_ID={eq_id}")
-            LAST_EARTHQUAKE_ID = eq_id
+            set_system_state(LAST_EARTHQUAKE_ID_KEY, eq_id)
             return
 
         # 檢查規模是否達到推播標準
         if magnitude < min_magnitude:
             logger.debug(f"地震規模 {magnitude} 未達推播標準 {min_magnitude}")
-            LAST_EARTHQUAKE_ID = eq_id
+            set_system_state(LAST_EARTHQUAKE_ID_KEY, eq_id)
             return
 
         # 檢查是否為近期地震
         if not is_recent_earthquake(earthquake_time, config.EARTHQUAKE_MAX_LATENCY):
             logger.debug(f"地震時間過舊，不推播: {earthquake_time}")
-            LAST_EARTHQUAKE_ID = eq_id
+            set_system_state(LAST_EARTHQUAKE_ID_KEY, eq_id)
             return
 
         # 更新最後處理的地震ID
-        LAST_EARTHQUAKE_ID = eq_id
+        set_system_state(LAST_EARTHQUAKE_ID_KEY, eq_id)
 
         # 建立推播訊息
         message = create_earthquake_message(magnitude, earthquake_time, location)

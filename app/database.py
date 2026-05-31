@@ -56,6 +56,7 @@ def init_db():
         "app.models.message",
         "app.models.restaurant",
         "app.models.notification",
+        "app.models.system_state",
     ]
     for module in model_modules:
         import_module(module)

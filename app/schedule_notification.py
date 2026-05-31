@@ -4,6 +4,7 @@ from pytz import timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.repositories.notification_repository import get_notifications_to_send, delete_notification
+from app.repositories.system_state_repository import try_acquire_job_lock
 from app.utils.line_utils import push_line_message_to_users
 from app.utils.logger import setup_logger
 
@@ -12,6 +13,9 @@ scheduler = AsyncIOScheduler(timezone=timezone("Asia/Taipei"))
 
 async def check_and_send_notifications():
     try:
+        if not try_acquire_job_lock("notifications", ttl_seconds=55):
+            return
+
         tz = timezone("Asia/Taipei")
         now = datetime.now(tz).time().replace(second=0, microsecond=0)
         tasks = get_notifications_to_send(now)
