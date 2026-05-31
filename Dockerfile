@@ -25,7 +25,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 複製應用程式碼
 COPY app/ ./app/
-COPY .env.example .env
 
 # 建立非 root 用戶
 RUN useradd --create-home --shell /bin/bash app && \
