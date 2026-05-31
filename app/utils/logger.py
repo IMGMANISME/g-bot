@@ -1,6 +1,8 @@
 # app/utils/logger.py
 """統一的日誌管理系統"""
+import copy
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -18,14 +20,16 @@ class ColoredFormatter(logging.Formatter):
     }
     
     def format(self, record):
-        color = self.COLORS.get(record.levelname, self.COLORS['RESET'])
-        record.levelname = f"{color}{record.levelname}{self.COLORS['RESET']}"
-        return super().format(record)
+        colored_record = copy.copy(record)
+        color = self.COLORS.get(colored_record.levelname, self.COLORS['RESET'])
+        colored_record.levelname = f"{color}{colored_record.levelname}{self.COLORS['RESET']}"
+        return super().format(colored_record)
 
-def setup_logger(name: str, level: str = "INFO") -> logging.Logger:
+def setup_logger(name: str, level: str | None = None) -> logging.Logger:
     """設置日誌記錄器"""
+    resolved_level = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
     logger = logging.getLogger(name)
-    logger.setLevel(getattr(logging, level.upper()))
+    logger.setLevel(getattr(logging, resolved_level, logging.INFO))
     
     # 避免重複添加處理器
     if logger.handlers:
