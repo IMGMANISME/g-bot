@@ -7,7 +7,8 @@ from app.utils.cache import global_cache
 from app.utils.line_utils import (
     get_sender_id, get_chat_id, safe_reply, show_loading_animation, 
     get_memory_id, get_or_fetch_user_name, remove_repetitive_messages,
-    clean_markdown_for_line, line_bot_api, safe_reply_message
+    clean_markdown_for_line, line_bot_api, safe_reply_message,
+    format_user_message_for_memory, is_multi_user_chat
 )
 from app.repositories.user_repository import get_user_state, get_user_location
 from app.repositories.message_repository import save_message, get_history
@@ -220,7 +221,9 @@ def handle_realtime_query(event, memory_id: str, user_input: str):
             global_cache.set(_last_realtime_query_key(memory_id), user_input, ttl=LAST_REALTIME_QUERY_TTL)
 
         realtime_info = get_realtime_info(query_text)
-        save_message(memory_id, "user", user_input)
+        sender_id = get_sender_id(event)
+        memory_user_input = format_user_message_for_memory(event, sender_id, user_input)
+        save_message(memory_id, "user", memory_user_input)
         save_message(memory_id, "realtime_info", realtime_info)
         messages = [
             {
@@ -265,9 +268,17 @@ def handle_gemini_conversation(event, sender_id: str, memory_id: str, user_input
     chat_id = get_chat_id(event)
     show_loading_animation(chat_id)
     
-    save_message(memory_id, "user", user_input)
     user_name = get_or_fetch_user_name(event, sender_id)
+    memory_user_input = format_user_message_for_memory(event, sender_id, user_input)
+    save_message(memory_id, "user", memory_user_input)
     is_admin = sender_id in config.ADMIN_USERS
+    chat_context = (
+        "這是一個多人群組對話。歷史訊息中，使用者訊息會用「使用者名稱：訊息內容」標示說話者；"
+        f"目前正在跟你說話的人是「{user_name}」。"
+        "回答時要能分辨不同成員，不要把不同人的發言混成同一個人。"
+        if is_multi_user_chat(event)
+        else f"目前與你對話的用戶名稱為: {user_name}"
+    )
     
     system_instruction = (
         f"你是G-Bot，G-MAN{'以及所有管理員' if is_admin else ''}是你老大。"
@@ -280,7 +291,7 @@ def handle_gemini_conversation(event, sender_id: str, memory_id: str, user_input
         "4. 只輸出最終答案正文，不要使用 XML/HTML 標籤，不要描述你的判斷過程、草稿、模型預覽或推理步驟。\n"
         "5. 避免使用「看起來」「推測」「在某語境裡」這類分析語句。\n"
         "6. 若使用者句子有歧義、疑似錯字或指代不清，只能先問一句澄清問題，不要自行展開語意分析。\n"
-        f"目前與你對話的用戶名稱為: {user_name}"
+        f"{chat_context}"
     )
     
     messages = [{"role": "system", "content": system_instruction}]

@@ -41,7 +41,19 @@ def get_chat_id(event) -> str:
 def get_memory_id(event) -> str:
     sender_id = get_sender_id(event)
     chat_id = get_chat_id(event)
+    if event.source.type in ["group", "room"]:
+        return chat_id
     return sender_id if sender_id == chat_id else f"{chat_id}:{sender_id}"
+
+def is_multi_user_chat(event) -> bool:
+    return event.source.type in ["group", "room"]
+
+def format_user_message_for_memory(event, sender_id: str, user_input: str) -> str:
+    if not is_multi_user_chat(event):
+        return user_input
+
+    user_name = get_or_fetch_user_name(event, sender_id)
+    return f"{user_name}：{user_input}"
 
 def clean_markdown_for_line(text: str) -> str:
     text = re.sub(r'^\* ', '• ', text, flags=re.MULTILINE)
@@ -122,4 +134,4 @@ def get_or_fetch_user_name(event, sender_id: str) -> str:
         return display_name
     except Exception as e:
         logger.warning(f"無法取得用戶資料: {e}")
-        return "Unknown User"
+        return f"未知使用者({sender_id[-6:]})" if sender_id and sender_id != "unknown" else "未知使用者"
