@@ -1,8 +1,8 @@
 #app/search_modules/nba.py
 import requests
-import logging
+from app.utils.logger import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -254,4 +254,3 @@ def nba_info(query: str) -> str:
             return get_team_today_game(team_name)
     else:
         return "⚠️ 請明確輸入要查詢的球隊名稱以及「戰績」或「比賽」關鍵字～"
-

@@ -1,13 +1,13 @@
 # app/search_modules/tavily_search.py
-import logging
 from typing import Any
 
 import requests
 
 from app.config import config
 from app.utils.cache import global_cache
+from app.utils.logger import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 TAVILY_SEARCH_URL = "https://api.tavily.com/search"
 NEWS_QUERY_KEYWORDS = ("新聞", "最新", "今天", "現在", "目前", "剛剛", "即時")
@@ -61,6 +61,11 @@ def get_tavily_search_results(query: str, limit: int | None = None) -> str:
     except requests.exceptions.HTTPError as e:
         status_code = e.response.status_code if e.response is not None else "unknown"
         logger.error("Tavily Search HTTP error: %s", e)
+        if status_code in (401, 403):
+            result_text = "Tavily 搜尋授權失敗，請管理員檢查 TAVILY_API_KEY。"
+            global_cache.set(cache_key, result_text, ttl=300)
+            return result_text
+
         result_text = f"Tavily 搜尋失敗，HTTP 狀態碼：{status_code}。"
         global_cache.set(cache_key, result_text, ttl=60)
         return result_text

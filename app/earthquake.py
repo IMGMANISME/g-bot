@@ -20,6 +20,11 @@ CWA_API_KEY = os.getenv("CWA_API_KEY")
 LAST_EARTHQUAKE_ID_KEY = "earthquake:last_processed_id"
 
 
+def normalize_earthquake_id(value) -> str:
+    """Return a stable string ID for DB comparison and storage."""
+    return str(value or "").strip()
+
+
 def parse_earthquake_data(latest: dict) -> tuple[Optional[float], Optional[datetime], Optional[str]]:
     """解析地震資料"""
     try:
@@ -108,7 +113,7 @@ def check_earthquake_job(min_magnitude: float = 4.0):
             return
 
         # 檢查是否為新地震
-        eq_id = latest_earthquake.get("EarthquakeNo")
+        eq_id = normalize_earthquake_id(latest_earthquake.get("EarthquakeNo"))
         if not eq_id:
             logger.warning("地震資料缺少 EarthquakeNo，跳過處理")
             return

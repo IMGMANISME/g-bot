@@ -30,6 +30,7 @@ def setup_logger(name: str, level: str | None = None) -> logging.Logger:
     resolved_level = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, resolved_level, logging.INFO))
+    logger.propagate = False
     
     # 避免重複添加處理器
     if logger.handlers:
@@ -61,6 +62,23 @@ def setup_logger(name: str, level: str | None = None) -> logging.Logger:
     logger.addHandler(file_handler)
     
     return logger
+
+
+def configure_root_logging(level: str | None = None) -> None:
+    """Route third-party logs to stdout so platforms do not mark INFO as errors."""
+    resolved_level = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
+    root_logger = logging.getLogger()
+    root_logger.setLevel(getattr(logging, resolved_level, logging.INFO))
+
+    for handler in root_logger.handlers:
+        root_logger.removeHandler(handler)
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+    root_logger.addHandler(handler)
+
+
+configure_root_logging()
 
 # 全域日誌記錄器
 main_logger = setup_logger("G-Bot")

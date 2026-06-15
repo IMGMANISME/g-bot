@@ -1,12 +1,11 @@
 # app/search_modules/weather.py
 import requests
-import logging
 import re
 import os
 from datetime import datetime
+from app.utils.logger import setup_logger
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 CWA_API_KEY = os.getenv("CWA_API_KEY")
 

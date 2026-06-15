@@ -1,13 +1,12 @@
 #app/realtime_search.py
 import re
-import logging
 from app.search_modules.weather import get_weather
 from app.search_modules.time import get_realtime
 from app.search_modules.nba import nba_info
 from app.search_modules.tavily_search import get_tavily_search_results
+from app.utils.logger import setup_logger
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 # --- 判斷是否需要即時資訊 ---
 def needs_realtime_info(text: str) -> bool:
