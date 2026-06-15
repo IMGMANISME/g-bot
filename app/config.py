@@ -99,6 +99,9 @@ class Config:
     # 日誌配置
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 
+    # 管理端點配置
+    METRICS_TOKEN: Optional[str] = os.getenv("METRICS_TOKEN")
+
 # 全域配置實例
 config = Config()
 

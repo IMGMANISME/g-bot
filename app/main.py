@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from linebot import WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 
-from app.line_bot import handle_events
+from app.line_bot import handle_events, shutdown_background_executor
 from app.database import init_db
 from app.earthquake import setup_earthquake_job
 from app.schedule_notification import start_scheduler
@@ -65,6 +65,7 @@ async def lifespan(app: FastAPI):
     
     # 關閉時執行
     logger.info("🛑 G-Bot 正在關閉...")
+    shutdown_background_executor()
 
 app = FastAPI(
     title="G-Bot",
@@ -113,8 +114,12 @@ async def health_check():
         raise HTTPException(status_code=503, detail="Service unhealthy")
 
 @app.get("/metrics")
-async def get_metrics():
+async def get_metrics(x_metrics_token: str = Header(None)):
     """取得效能指標"""
+    if not config.METRICS_TOKEN:
+        raise HTTPException(status_code=404, detail="Not found")
+    if x_metrics_token != config.METRICS_TOKEN:
+        raise HTTPException(status_code=403, detail="Forbidden")
     return performance_monitor.get_performance_report()
 
 @app.post("/callback")
@@ -123,7 +128,7 @@ async def callback(request: Request, x_line_signature: str = Header(None)):
     body = await request.body()
     
     # 記錄請求
-    logger.debug(f"收到 webhook 請求，簽名: {x_line_signature}")
+    logger.debug(f"收到 webhook 請求，簽名存在: {bool(x_line_signature)}")
     
     try:
         handler.handle(body.decode("utf-8"), x_line_signature)

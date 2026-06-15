@@ -1,9 +1,34 @@
 import math
+from dataclasses import dataclass
 from typing import Optional, Set
 
 from sqlalchemy import Float, cast
 from app.database import SessionLocal
 from app.models.restaurant import Restaurant
+
+
+@dataclass(frozen=True)
+class RestaurantRecord:
+    place_id: str
+    name: str
+    address: str | None
+    rating: int | None
+    price_level: int | None
+    lat: str | None
+    lng: str | None
+
+
+def _to_record(restaurant: Restaurant) -> RestaurantRecord:
+    return RestaurantRecord(
+        place_id=restaurant.place_id,
+        name=restaurant.name,
+        address=restaurant.address,
+        rating=restaurant.rating,
+        price_level=restaurant.price_level,
+        lat=restaurant.lat,
+        lng=restaurant.lng,
+    )
+
 
 def save_restaurant(place: dict, lat: float, lng: float):
     with SessionLocal() as db:
@@ -91,4 +116,4 @@ def get_restaurants_backup(
             return 6371000 * c
 
         results.sort(key=lambda place: (distance_key(place), -(place.rating or 0)))
-        return results[:limit]
+        return [_to_record(place) for place in results[:limit]]

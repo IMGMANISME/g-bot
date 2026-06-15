@@ -1,6 +1,27 @@
 from datetime import time as dtime
+from dataclasses import dataclass
 from app.database import SessionLocal
 from app.models.notification import ScheduledNotification
+
+
+@dataclass(frozen=True)
+class NotificationRecord:
+    id: int
+    sender_id: str
+    message: str
+    time: dtime
+    repeat_daily: bool
+
+
+def _to_record(notification: ScheduledNotification) -> NotificationRecord:
+    return NotificationRecord(
+        id=notification.id,
+        sender_id=notification.sender_id,
+        message=notification.message,
+        time=notification.time,
+        repeat_daily=notification.repeat_daily,
+    )
+
 
 def add_scheduled_notification(sender_id: str, message: str, time_str: str, repeat_daily: bool):
     with SessionLocal() as db:
@@ -16,7 +37,8 @@ def add_scheduled_notification(sender_id: str, message: str, time_str: str, repe
 
 def get_notifications_to_send(current_time: dtime):
     with SessionLocal() as db:
-        return db.query(ScheduledNotification).filter(ScheduledNotification.time == current_time).all()
+        notifications = db.query(ScheduledNotification).filter(ScheduledNotification.time == current_time).all()
+        return [_to_record(notification) for notification in notifications]
 
 def delete_notification(notification_id: int):
     with SessionLocal() as db:
@@ -25,7 +47,13 @@ def delete_notification(notification_id: int):
 
 def get_user_notifications(sender_id: str):
     with SessionLocal() as db:
-        return db.query(ScheduledNotification).filter(ScheduledNotification.sender_id == sender_id).order_by(ScheduledNotification.time.asc()).all()
+        notifications = (
+            db.query(ScheduledNotification)
+            .filter(ScheduledNotification.sender_id == sender_id)
+            .order_by(ScheduledNotification.time.asc())
+            .all()
+        )
+        return [_to_record(notification) for notification in notifications]
 
 def delete_notification_by_id(sender_id: str, notification_id: int) -> bool:
     with SessionLocal() as db:

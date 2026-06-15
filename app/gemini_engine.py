@@ -175,12 +175,12 @@ def _build_generation_config(system_instruction: str | None) -> types.GenerateCo
         response_mime_type="text/plain",
     )
 
+@handle_exceptions("我現在懶得回答你，請等一下再試😉", log_error=True)
 @retry(
     stop=stop_after_attempt(3), 
     wait=wait_exponential(multiplier=1, min=2, max=10),
     reraise=True
 )
-@handle_exceptions("我現在懶得回答你，請等一下再試😉", log_error=True)
 def query_gemini(messages: list) -> str:
     """查詢 Gemma/Gemini API 模型。"""
     if not messages:

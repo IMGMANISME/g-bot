@@ -70,8 +70,10 @@ def configure_root_logging(level: str | None = None) -> None:
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, resolved_level, logging.INFO))
 
-    for handler in root_logger.handlers:
-        root_logger.removeHandler(handler)
+    if root_logger.handlers:
+        for handler in root_logger.handlers:
+            handler.setLevel(getattr(logging, resolved_level, logging.INFO))
+        return
 
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))

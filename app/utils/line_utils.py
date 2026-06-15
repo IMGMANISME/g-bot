@@ -11,19 +11,23 @@ logger = setup_logger("line_utils")
 line_bot_api = LineBotApi(config.LINE_CHANNEL_ACCESS_TOKEN)
 
 @handle_exceptions("⚠️ 訊息推送失敗")
-def push_line_message_to_users(message: str, user_ids: list[str], image_url: str = None):
+def push_line_message_to_users(message: str, user_ids: list[str], image_url: str = None) -> bool:
     from linebot.models import ImageSendMessage
     
     messages = [TextSendMessage(text=message)]
     if image_url:
         messages.append(ImageSendMessage(original_content_url=image_url, preview_image_url=image_url))
 
+    success_count = 0
     for uid in user_ids:
         try:
             line_bot_api.push_message(uid, messages)
             logger.info(f"成功推送訊息給用戶: {uid}")
+            success_count += 1
         except Exception as e:
             logger.error(f"推送失敗給用戶 {uid}: {e}")
+
+    return success_count == len(user_ids)
 
 def get_sender_id(event) -> str:
     source = event.source
@@ -72,18 +76,22 @@ def remove_repetitive_messages(messages: list) -> list:
     return cleaned
 
 def safe_reply(event, message: str):
-    safe_reply_message(event, TextSendMessage(text=message))
+    return safe_reply_message(event, TextSendMessage(text=message))
 
-def safe_reply_message(event, send_message):
+def safe_reply_message(event, send_message) -> bool:
     try:
         line_bot_api.reply_message(event.reply_token, send_message)
         logger.debug(f"成功回覆訊息給 {get_sender_id(event)}")
+        return True
     except Exception as e:
         logger.warning(f"reply_message 失敗，改用推播: {e}")
         try:
             line_bot_api.push_message(get_chat_id(event), send_message)
+            logger.info(f"reply fallback push_message 成功 - chat_id: {get_chat_id(event)}")
+            return True
         except Exception as push_error:
             logger.error(f"push_message 也失敗：{push_error}")
+            return False
 
 def _send_loading_request(url: str, payload: dict, action_name: str):
     try:
@@ -115,7 +123,7 @@ def show_loading_animation(chat_id: str):
 def safe_reply_with_loading(event, message: str):
     chat_id = get_chat_id(event)
     show_loading_animation(chat_id)
-    safe_reply(event, message)
+    return safe_reply(event, message)
 
 def get_or_fetch_user_name(event, sender_id: str) -> str:
     from app.repositories.user_repository import get_cached_user_profile, upsert_user_profile

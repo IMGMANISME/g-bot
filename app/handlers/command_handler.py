@@ -295,7 +295,11 @@ class CommandProcessor:
         for handler in self.handlers:
             if handler.can_handle(command, context):
                 logger.info(f"使用處理器 {handler.__class__.__name__} 處理命令: {command}")
-                return handler.handle(command, context)
+                result = handler.handle(command, context)
+                if isinstance(result, CommandResult):
+                    return result
+                logger.error(f"{handler.__class__.__name__} 回傳非 CommandResult: {result!r}")
+                return CommandResult(False, str(result) if result else "⚠️ 命令執行失敗")
         
         return None
     

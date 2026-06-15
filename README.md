@@ -212,6 +212,7 @@ G-Bot 會用 LINE 顯示名稱比對這份清單。命中時，AI 會用更禮�
 | `PORT` | `8787` | 本地或容器服務端口 |
 | `LOG_LEVEL` | `INFO` | 日誌等級 |
 | `CORS_ALLOW_ORIGINS` | 空值 | 允許的 CORS origins，逗號分隔 |
+| `METRICS_TOKEN` | 空值 | `/metrics` 存取權杖；未設定時 `/metrics` 會回傳 404 |
 
 ## Docker
 
