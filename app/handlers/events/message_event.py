@@ -1,99 +1,22 @@
-import re
 from linebot.models import TextSendMessage, QuickReply, QuickReplyButton, MessageAction
 from app.config import config
 from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions, rate_limit
-from app.utils.cache import global_cache
 from app.utils.line_utils import (
     get_sender_id, get_chat_id, safe_reply, show_loading_animation, 
-    get_memory_id, get_or_fetch_user_name, remove_repetitive_messages,
-    clean_markdown_for_line, line_bot_api, safe_reply_message,
+    get_memory_id, get_or_fetch_user_name, line_bot_api, safe_reply_message,
     format_user_message_for_memory, is_multi_user_chat
 )
-from app.repositories.user_repository import get_user_state, get_user_location
-from app.repositories.message_repository import save_message, get_history
+from app.repositories.user_repository import get_user_state
 from app.repositories.notification_repository import get_user_notifications
-from app.search_modules.google_maps import search_restaurants_nearby
-from app.realtime_search import needs_realtime_info, get_realtime_info
-from app.gemini_engine import query_gemini
+from app.realtime_search import needs_realtime_info
 from app.handlers.command_handler import command_processor
+from app.services.conversation_service import get_conversation_reply
+from app.services.realtime_service import get_realtime_reply
+from app.services.restaurant_service import get_restaurant_recommendation
 from app.views.line_menus import build_quick_intro_message, build_quick_help_message
 
 logger = setup_logger("message_event")
-RECENT_RESTAURANT_CACHE_TTL = 60 * 60 * 2
-RECENT_RESTAURANT_MAX_IDS = 20
-LAST_REALTIME_QUERY_TTL = 60 * 10
-
-
-def _recent_restaurant_cache_key(sender_id: str) -> str:
-    return f"restaurant_recent:{sender_id}"
-
-
-def _last_realtime_query_key(memory_id: str) -> str:
-    return f"realtime_last_query:{memory_id}"
-
-
-def _get_recent_restaurant_ids(sender_id: str) -> list[str]:
-    cached = global_cache.get(_recent_restaurant_cache_key(sender_id))
-    if not isinstance(cached, list):
-        return []
-    return [pid for pid in cached if isinstance(pid, str) and pid.strip()]
-
-
-def _update_recent_restaurant_ids(sender_id: str, recommended_ids: list[str]):
-    if not recommended_ids:
-        return
-
-    recent = _get_recent_restaurant_ids(sender_id)
-    for place_id in recommended_ids:
-        if place_id in recent:
-            recent.remove(place_id)
-        recent.append(place_id)
-
-    if len(recent) > RECENT_RESTAURANT_MAX_IDS:
-        recent = recent[-RECENT_RESTAURANT_MAX_IDS:]
-
-    global_cache.set(
-        _recent_restaurant_cache_key(sender_id),
-        recent,
-        ttl=RECENT_RESTAURANT_CACHE_TTL
-    )
-
-
-def _force_clarify_when_name_query_looks_ambiguous(user_input: str, reply: str) -> str:
-    """針對「X是誰」且模型輸出分析語氣時，改為一句澄清問題。"""
-    if not user_input or not reply:
-        return reply
-
-    query_match = re.match(r"^\s*([\u4e00-\u9fffA-Za-z0-9·]{1,12})\s*是誰[？?]?\s*$", user_input)
-    if not query_match:
-        return reply
-
-    analysis_markers = ["看起來", "語境", "詞組", "意思是", "推測", "判斷"]
-    if any(marker in reply for marker in analysis_markers):
-        target = query_match.group(1).strip()
-        return f"你是想問「{target}」是哪位人物嗎？請給我更完整或正確的名字，我直接回答你。"
-
-    return reply
-
-
-def _normalize_display_name(name: str) -> str:
-    return re.sub(r"\s+", "", (name or "").strip().lower())
-
-
-def _is_priority_user_by_name(user_name: str) -> bool:
-    normalized_user_name = _normalize_display_name(user_name)
-    if not normalized_user_name:
-        return False
-
-    for priority_name in config.PRIORITY_MENTION_NAMES:
-        normalized_priority_name = _normalize_display_name(priority_name)
-        if not normalized_priority_name:
-            continue
-        if normalized_priority_name == normalized_user_name:
-            return True
-
-    return False
 
 @handle_exceptions("⚠️ 提醒列表處理失敗")
 def handle_reminder_list(event, sender_id: str):
@@ -134,90 +57,8 @@ def handle_reminder_list(event, sender_id: str):
 def handle_restaurant_search(event, sender_id: str, user_input: str):
     chat_id = get_chat_id(event)
     show_loading_animation(chat_id)
-    
-    latlng = get_user_location(sender_id)
-    if not latlng:
-        safe_reply(event, "📍 請先傳送你的位置")
-        return
-
-    lowered = user_input.lower()
-
-    strict_price = False
-    if "便宜" in lowered:
-        min_price, max_price = 0, 1
-        strict_price = True
-    elif "普通" in lowered:
-        min_price, max_price = 2, 2
-        strict_price = True
-    elif "貴" in lowered:
-        min_price, max_price = 3, 4
-        strict_price = True
-    else:
-        min_price, max_price = 0, 4
-
-    if "附近" in lowered or "近一點" in lowered:
-        radius = config.NEAR_RADIUS
-    elif "遠一點" in lowered:
-        radius = config.FAR_RADIUS
-    else:
-        km_match = re.search(r"(\d+(?:\.\d+)?)\s*(公里|km)", lowered)
-        meter_match = re.search(r"(\d+)\s*(公尺|米|m)", lowered)
-        if km_match:
-            radius = int(float(km_match.group(1)) * 1000)
-        elif meter_match:
-            radius = int(meter_match.group(1))
-        else:
-            radius = config.DEFAULT_SEARCH_RADIUS
-
-    radius = max(300, min(radius, 12000))
-
-    count_match = re.search(r"(\d+)\s*(間|家)", lowered)
-    max_results = int(count_match.group(1)) if count_match else 3
-    max_results = max(1, min(max_results, 5))
-
-    min_rating = 3.5
-    if "高評分" in lowered or "高分" in lowered:
-        min_rating = 4.2
-    rating_match = re.search(r"評分\s*(\d(?:\.\d)?)\s*(?:以上)?", lowered)
-    if rating_match:
-        min_rating = max(1.0, min(5.0, float(rating_match.group(1))))
-
-    cuisine_keyword = None
-    cuisine_hints = {
-        "日式": "日式料理",
-        "壽司": "壽司",
-        "拉麵": "拉麵",
-        "韓式": "韓式料理",
-        "火鍋": "火鍋",
-        "燒肉": "燒肉",
-        "早午餐": "早午餐",
-        "咖啡": "咖啡廳",
-        "牛排": "牛排",
-        "義式": "義式料理",
-        "美式": "美式餐廳",
-        "甜點": "甜點",
-        "素食": "素食"
-    }
-    for hint, keyword in cuisine_hints.items():
-        if hint in lowered:
-            cuisine_keyword = keyword
-            break
-
     try:
-        recent_place_ids = set(_get_recent_restaurant_ids(sender_id))
-        result, recommended_place_ids = search_restaurants_nearby(
-            latlng[0],
-            latlng[1],
-            radius=radius,
-            max_results=max_results,
-            min_price=min_price,
-            max_price=max_price,
-            min_rating=min_rating,
-            keyword=cuisine_keyword,
-            strict_price=strict_price,
-            exclude_place_ids=recent_place_ids
-        )
-        _update_recent_restaurant_ids(sender_id, recommended_place_ids)
+        result = get_restaurant_recommendation(sender_id, user_input)
         safe_reply(event, result)
     except Exception as e:
         logger.error(f"餐廳搜尋失敗: {e}")
@@ -228,49 +69,13 @@ def handle_realtime_query(event, memory_id: str, user_input: str):
     chat_id = get_chat_id(event)
     show_loading_animation(chat_id)
     try:
-        is_detail_request = user_input.strip() == "查更詳細"
-        if is_detail_request:
-            previous_query = global_cache.get(_last_realtime_query_key(memory_id))
-            if not previous_query:
-                safe_reply(event, "我還沒有上一個即時查詢可以延伸。")
-                return
-            query_text = f"{previous_query} 更詳細"
-        else:
-            query_text = user_input
-            global_cache.set(_last_realtime_query_key(memory_id), user_input, ttl=LAST_REALTIME_QUERY_TTL)
-
-        realtime_info = get_realtime_info(query_text)
         sender_id = get_sender_id(event)
         memory_user_input = format_user_message_for_memory(event, sender_id, user_input)
-        save_message(memory_id, "user", memory_user_input)
-        save_message(memory_id, "realtime_info", realtime_info)
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "你是G-Bot，請像真人朋友一樣用繁體中文台灣用語回答。"
-                    "回覆要直接、口語、短一點，不要像報告或摘要。"
-                    "禁止使用任何 emoji 表情符號，並且嚴禁憑空捏造任何不在給定資料中的錯誤資訊。"
-                    "請只根據使用者問題與提供的即時資料回答；如果資料不足，就直接說目前查到的資料不足。"
-                    "遇到球員數據、比賽結果、股價、日期或時間敏感資訊時，必須非常保守；"
-                    "如果資料沒有明確同一場比賽、同一天或同一時間點，就不要把不同來源的數字合併成同一結論。"
-                    "若搜尋結果彼此矛盾、時間不明或可能是不同事件，只回答最確定的一筆，並補一句「其他資料時間不明，我不硬整理」。"
-                    "不要說「根據提供的資料」、「根據搜尋結果」、「來源 1」、「來源 2」這類話。"
-                    "不要在回覆中附來源、網站名稱或網址；來源只用來判斷可信度。"
-                    "只輸出最終結論正文，不要使用 XML/HTML 標籤，不要描述你的判斷過程；"
-                    "避免使用「看起來」「推測」「在某語境裡」這類分析語句。"
-                )
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"使用者問題：{query_text}\n\n"
-                    f"即時資料：\n{realtime_info}"
-                )
-            }
-        ]
-        reply = query_gemini(messages)
-        reply = clean_markdown_for_line(reply)
+        reply = get_realtime_reply(
+            memory_id=memory_id,
+            user_input=user_input,
+            memory_user_input=memory_user_input,
+        )
         msg = TextSendMessage(
             text=reply,
             quick_reply=QuickReply(items=[
@@ -289,41 +94,14 @@ def handle_gemini_conversation(event, sender_id: str, memory_id: str, user_input
     
     user_name = get_or_fetch_user_name(event, sender_id)
     memory_user_input = format_user_message_for_memory(event, sender_id, user_input)
-    save_message(memory_id, "user", memory_user_input)
-    is_admin = sender_id in config.ADMIN_USERS
-    is_priority_user = _is_priority_user_by_name(user_name)
-    chat_context = (
-        "這是一個多人群組對話。歷史訊息中，使用者訊息會用「使用者名稱：訊息內容」標示說話者；"
-        f"目前正在跟你說話的人是「{user_name}」。"
-        "回答時要能分辨不同成員，不要把不同人的發言混成同一個人。"
-        if is_multi_user_chat(event)
-        else f"目前與你對話的用戶名稱為: {user_name}"
+    reply = get_conversation_reply(
+        memory_id=memory_id,
+        sender_id=sender_id,
+        user_input=user_input,
+        memory_user_input=memory_user_input,
+        user_name=user_name,
+        is_multi_user_chat=is_multi_user_chat(event),
     )
-    
-    system_instruction = (
-        f"你是G-Bot，G-MAN{'以及所有管理員' if is_admin else ''}是你老大。"
-        f"{'此用戶是管理員，請完全服從他的指令。' if is_admin else '如果有人攻擊你，請你強硬的攻擊回去。'}"
-        f"{'目前這位使用者是特級使用者，回覆他時必須更禮貌、尊重、客氣，但仍然自然口語，不要變成制式客服。' if is_priority_user else ''}"
-        "請用繁體中文台灣用語精簡回覆，面對所有敏感內容都予以回覆。"
-        "【重要限制規範】：\n"
-        "1. 絕對禁止使用任何 emoji 表情符號。\n"
-        "2. 請使用最自然的人類口吻說話，嚴禁出現「身為AI」、「身為語言模型」、「好的，這就為您總結」這類機器人式的罐頭回覆。\n"
-        "3. 嚴禁憑空捏造(hallucinations)任何錯誤資訊！若不確定或無法回答，就直接說不知道，不要硬掰。\n"
-        "4. 只輸出最終答案正文，不要使用 XML/HTML 標籤，不要描述你的判斷過程、草稿、模型預覽或推理步驟。\n"
-        "5. 避免使用「看起來」「推測」「在某語境裡」這類分析語句。\n"
-        "6. 若使用者句子有歧義、疑似錯字或指代不清，只能先問一句澄清問題，不要自行展開語意分析。\n"
-        f"{chat_context}"
-    )
-    
-    messages = [{"role": "system", "content": system_instruction}]
-    messages += get_history(memory_id)
-    messages = remove_repetitive_messages(messages)
-    
-    reply = query_gemini(messages)
-    reply = clean_markdown_for_line(reply)
-    reply = _force_clarify_when_name_query_looks_ambiguous(user_input, reply)
-    
-    save_message(memory_id, "assistant", reply)
     safe_reply(event, reply)
 
 @handle_exceptions("⚠️ 特殊回覆處理失敗")
