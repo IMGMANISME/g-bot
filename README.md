@@ -43,11 +43,29 @@ app/
 ├── earthquake.py            # 地震資料查詢與通知
 ├── schedule_notification.py # APScheduler 提醒與背景任務
 ├── handlers/                # LINE 事件與指令處理
+├── services/                # 對話、即時查詢、餐廳推薦等業務流程
 ├── models/                  # SQLAlchemy models
 ├── repositories/            # 資料庫存取層
+├── prompts/                 # 可替換的 bot system prompt 文字模板
 ├── search_modules/          # 天氣、NBA、Tavily、Google Maps 等查詢模組
 ├── utils/                   # logger、cache、decorators、LINE 工具
 └── views/                   # LINE quick reply / menu 建立
+```
+
+## Bot Prompt
+
+System prompt 放在 `app/prompts/<profile>/`，預設 profile 是 `gbot`。
+
+```text
+app/prompts/gbot/
+├── conversation.txt  # 一般對話人格與限制
+└── realtime.txt      # 即時查詢回答規則
+```
+
+如果要開發另一個 bot，可以新增一個資料夾，例如 `app/prompts/support_bot/`，放入同名的 `conversation.txt` 與 `realtime.txt`，再設定：
+
+```env
+SYSTEM_PROMPT_PROFILE=support_bot
 ```
 
 ## 本地開發
@@ -159,6 +177,7 @@ G-Bot 會用 LINE 顯示名稱比對這份清單。命中時，AI 會用更禮�
 | `GEMINI_MODEL` | `gemma-4-26b-a4b-it` | Gemini 模型名稱 |
 | `GEMINI_TEMPERATURE` | `0.7` | 回覆溫度 |
 | `GEMINI_MAX_TOKENS` | `2048` | 最大輸出 token |
+| `SYSTEM_PROMPT_PROFILE` | `gbot` | 使用 `app/prompts/<profile>/` 中的 prompt 模板 |
 
 ### LINE Bot
 
