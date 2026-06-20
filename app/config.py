@@ -48,6 +48,7 @@ class Config:
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemma-4-26b-a4b-it")
     GEMINI_TEMPERATURE: float = _get_float("GEMINI_TEMPERATURE", 0.7)
     GEMINI_MAX_TOKENS: int = _get_int("GEMINI_MAX_TOKENS", 2048)
+    SYSTEM_PROMPT_PROFILE: str = os.getenv("SYSTEM_PROMPT_PROFILE", "gbot")
     
     # 資料庫配置
     DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL")
