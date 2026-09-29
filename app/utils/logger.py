@@ -70,6 +70,11 @@ def configure_root_logging(level: str | None = None) -> None:
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, resolved_level, logging.INFO))
 
+    # APScheduler 每次執行 job 都會輸出 INFO（地震檢查每 20 秒一次），只保留 WARNING 以上
+    logging.getLogger("apscheduler").setLevel(
+        os.getenv("APSCHEDULER_LOG_LEVEL", "WARNING").upper()
+    )
+
     if root_logger.handlers:
         for handler in root_logger.handlers:
             handler.setLevel(getattr(logging, resolved_level, logging.INFO))
