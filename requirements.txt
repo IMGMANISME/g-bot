@@ -4,7 +4,7 @@ line-bot-sdk
 google-genai
 requests
 python-dotenv
-sqlalchemy
+sqlalchemy<2.1
 asyncpg
 tenacity
 psycopg2-binary
