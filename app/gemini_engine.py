@@ -1,7 +1,7 @@
 #app/gemini_engine.py
 import re
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 from tenacity import retry, stop_after_attempt, wait_exponential
 from app.config import config
 from app.utils.logger import setup_logger
@@ -150,6 +150,15 @@ def _extract_final_reply(raw_text: str) -> str:
 
     return _clean_reply_payload(result)
 
+# 金鑰無效、停權或沒有權限時，重試也不會成功
+_AUTH_ERROR_CODES = (401, 403)
+AUTH_ERROR_REPLY = "⚠️ 我的 AI 服務暫時無法使用，請稍後再試或聯絡管理員。"
+
+
+def _is_auth_error(e: Exception) -> bool:
+    return isinstance(e, errors.ClientError) and getattr(e, "code", None) in _AUTH_ERROR_CODES
+
+
 # === 初始化 Gemma/Gemini API Client ===
 genai_client = genai.Client(api_key=config.GEMINI_API_KEY)
 
@@ -235,6 +244,12 @@ def query_gemini(messages: list) -> str:
         return result
 
     except Exception as e:
+        if _is_auth_error(e):
+            logger.error(
+                f"Gemma/Gemini API 認證失敗 ({e.code} {getattr(e, 'status', '')})，"
+                "請檢查 GEMINI_API_KEY 是否有效或已被停權"
+            )
+            return AUTH_ERROR_REPLY
         logger.error(f"Gemma/Gemini API 發生錯誤: {e}")
         raise
 

@@ -3,6 +3,7 @@
 import copy
 import logging
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,34 @@ class ColoredFormatter(logging.Formatter):
         colored_record.levelname = f"{color}{colored_record.levelname}{self.COLORS['RESET']}"
         return super().format(colored_record)
 
+_GOOGLE_API_KEY_PATTERN = re.compile(r"AIza[0-9A-Za-z_\-]{35}")
+
+
+def redact_secrets(text: str) -> str:
+    """遮蔽日誌中的 API 金鑰，避免錯誤訊息把金鑰寫進 log。"""
+    text = _GOOGLE_API_KEY_PATTERN.sub("AIza***", text)
+    api_key = os.getenv("GEMINI_API_KEY")
+    if api_key and len(api_key) >= 8:
+        text = text.replace(api_key, "***")
+    return text
+
+
+class RedactSecretsFilter(logging.Filter):
+    """在輸出前遮蔽訊息與 traceback 中的金鑰"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = redact_secrets(record.getMessage())
+        record.args = None
+        if record.exc_info and not record.exc_text:
+            record.exc_text = logging.Formatter().formatException(record.exc_info)
+        if record.exc_text:
+            record.exc_text = redact_secrets(record.exc_text)
+        return True
+
+
+_redact_filter = RedactSecretsFilter()
+
+
 def setup_logger(name: str, level: str | None = None) -> logging.Logger:
     """設置日誌記錄器"""
     resolved_level = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
@@ -43,6 +72,7 @@ def setup_logger(name: str, level: str | None = None) -> logging.Logger:
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     console_handler.setFormatter(console_formatter)
+    console_handler.addFilter(_redact_filter)
     logger.addHandler(console_handler)
     
     # 檔案處理器（可選）
@@ -59,6 +89,7 @@ def setup_logger(name: str, level: str | None = None) -> logging.Logger:
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     file_handler.setFormatter(file_formatter)
+    file_handler.addFilter(_redact_filter)
     logger.addHandler(file_handler)
     
     return logger
@@ -78,10 +109,12 @@ def configure_root_logging(level: str | None = None) -> None:
     if root_logger.handlers:
         for handler in root_logger.handlers:
             handler.setLevel(getattr(logging, resolved_level, logging.INFO))
+            handler.addFilter(_redact_filter)
         return
 
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+    handler.addFilter(_redact_filter)
     root_logger.addHandler(handler)
 
 
