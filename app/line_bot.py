@@ -1,9 +1,10 @@
 from linebot import WebhookHandler
-from linebot.models import MessageEvent, TextMessage, LocationMessage
+from linebot.models import FollowEvent, JoinEvent, MessageEvent, TextMessage, LocationMessage
 import time
 from concurrent.futures import ThreadPoolExecutor
 from app.handlers.events.location_event import handle_location
 from app.handlers.events.message_event import handle_message
+from app.handlers.events.welcome_event import handle_follow, handle_join
 from app.utils.logger import setup_logger
 from app.utils.performance import performance_monitor
 
@@ -53,3 +54,13 @@ def handle_events(handler: WebhookHandler):
             _run_in_background("text_message", handle_message, event)
         except Exception as e:
             logger.error(f"路由文字訊息時發生錯誤: {e}", exc_info=True)
+
+    @handler.add(FollowEvent)
+    def wrapper_handle_follow(event):
+        logger.info("收到加好友事件")
+        _run_in_background("follow", handle_follow, event)
+
+    @handler.add(JoinEvent)
+    def wrapper_handle_join(event):
+        logger.info("收到加入群組事件")
+        _run_in_background("join", handle_join, event)

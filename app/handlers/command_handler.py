@@ -3,7 +3,8 @@
 import re
 from typing import Optional
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from app.tools.executor import QuickReplyItem
 from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions
 
@@ -15,9 +16,18 @@ class CommandResult:
     success: bool
     message: str
     should_continue: bool = False
+    quick_replies: list[QuickReplyItem] = field(default_factory=list)
 
 class BaseCommandHandler(ABC):
     """基礎命令處理器"""
+
+    @staticmethod
+    def _prefix(context: dict) -> str:
+        """標記模式下按鈕文字要加 @G-bot"""
+        from app.repositories.user_repository import get_user_state
+        from app.views.line_menus import mention_prefix
+        state_id = context.get("state_id") or context.get("chat_id") or context.get("sender_id")
+        return mention_prefix(get_user_state(state_id))
     
     @abstractmethod
     def can_handle(self, command: str, context: dict) -> bool:
@@ -170,7 +180,15 @@ class EarthquakeCommandHandler(BaseCommandHandler):
         if match:
             magnitude = float(match.group(1))
             if magnitude < 0 or magnitude > 10:
-                return CommandResult(False, "地震門檻請設定 0 到 10 之間的規模。")
+                return CommandResult(
+                    False,
+                    "地震門檻請設定 0 到 10 之間的規模，常用的是 4 到 5。",
+                    quick_replies=[
+                        QuickReplyItem("門檻 4.0", f"{self._prefix(context)}地震門檻 4.0"),
+                        QuickReplyItem("門檻 4.5", f"{self._prefix(context)}地震門檻 4.5"),
+                        QuickReplyItem("門檻 5.0", f"{self._prefix(context)}地震門檻 5.0"),
+                    ],
+                )
             set_earthquake_min_magnitude(state_id, magnitude)
             return CommandResult(True, f"地震通知門檻已改成規模 {magnitude}。")
 
@@ -213,7 +231,11 @@ class ReminderCommandHandler(BaseCommandHandler):
                     return CommandResult(True, "\n".join(results))
                 except ValueError:
                     return CommandResult(False, "❌ 提醒編號必須是數字")
-            return CommandResult(False, "❌ 格式錯誤，請使用：取消提醒 <編號1> <編號2> ...")
+            return CommandResult(
+                False,
+                "要取消哪一個提醒呢？請在後面加上編號，例如「取消提醒 3」。不知道編號的話，先看一下你的提醒列表。",
+                quick_replies=[QuickReplyItem("我的提醒", f"{self._prefix(context)}我的提醒")],
+            )
         
         # 刪除全部提醒
         elif "刪除全部提醒" in command:

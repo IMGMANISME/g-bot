@@ -287,7 +287,7 @@ Matching ignores case and whitespace, though names should still match the LINE d
 | Variable | Default | Description |
 |---|---|---|
 | `DEFAULT_SEARCH_RADIUS` | 1500 | Default search radius in meters |
-| `NEAR_RADIUS` | 500 | Radius for "nearby" searches |
+| `NEAR_RADIUS` | 500 | Radius when the user asks for somewhere closer ("近一點") |
 | `FAR_RADIUS` | 2500 | Radius for "a bit farther" searches |
  
 ### Earthquake Notifications

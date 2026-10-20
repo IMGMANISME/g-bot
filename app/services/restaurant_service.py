@@ -58,7 +58,8 @@ def _parse_restaurant_query(user_input: str) -> dict:
     else:
         min_price, max_price = 0, 4
 
-    if "附近" in lowered or "近一點" in lowered:
+    # 「附近」是口語的找吃的，不代表要縮小範圍；明確說「近一點」才用小半徑
+    if "近一點" in lowered:
         radius = config.NEAR_RADIUS
     elif "遠一點" in lowered:
         radius = config.FAR_RADIUS

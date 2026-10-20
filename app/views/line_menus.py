@@ -50,3 +50,55 @@ def build_quick_help_message(event) -> TextSendMessage:
         items = [("選單", "#選單"), ("狀態", "#狀態"), ("功能", "#功能"), ("設定", "我的設定"), ("安靜", "#安靜"), ("說話", "#說話")]
     
     return TextSendMessage(text=help_text, quick_reply=create_quick_reply_buttons(items))
+
+
+# --- 主動引導 ---
+
+def mention_prefix(state: str) -> str:
+    """標記模式下，按鈕送出的文字要加上 @G-bot，否則我不會回覆。"""
+    return "@G-bot " if "mention" in state else ""
+
+
+def build_welcome_message() -> TextSendMessage:
+    """被加好友時的招呼。"""
+    text = (
+        "嗨，我是 G-Bot！直接跟我聊天就可以，也可以這樣用我：\n\n"
+        "☀️ 問天氣：「高雄明天會下雨嗎」\n"
+        "⏰ 設提醒：「明天早上八點提醒我開會」\n"
+        "🍜 找吃的：先傳位置給我，再問「附近有什麼好吃的」\n\n"
+        "想看所有指令，輸入「#幫助」。"
+    )
+    return build_reply_message(text, [
+        QuickReplyItem("台北天氣", "台北天氣"),
+        QuickReplyItem("10 分鐘後提醒我", "10分鐘後提醒我喝水"),
+        QuickReplyItem("📍 傳送位置"),
+        QuickReplyItem("幫助", "#幫助"),
+    ])
+
+
+def build_group_welcome_message() -> TextSendMessage:
+    """被拉進群組或聊天室時的自我介紹。"""
+    text = (
+        "大家好，我是 G-Bot！\n\n"
+        "可以問我天氣、請我設提醒，或傳位置後問我附近吃什麼。\n"
+        "目前群組裡的每則訊息我都會回，覺得太吵的話輸入「#標記」，"
+        "我就只在有人叫「@G-bot」時才回覆。\n\n"
+        "想看所有指令，輸入「#幫助」。"
+    )
+    return build_reply_message(text, [
+        QuickReplyItem("只在被叫時回", "#標記"),
+        QuickReplyItem("台北天氣", "台北天氣"),
+        QuickReplyItem("幫助", "#幫助"),
+    ])
+
+
+def build_location_received_message(prefix: str) -> TextSendMessage:
+    """收到位置後，提供找餐廳的快捷按鈕。"""
+    call = "標記我並問" if prefix else "直接問我"
+    text = f"📍 收到你的位置了！想吃什麼{call}，例如「附近有什麼好吃的」「便宜的拉麵」。"
+    return build_reply_message(text, [
+        QuickReplyItem("附近吃什麼", f"{prefix}附近有什麼好吃的"),
+        QuickReplyItem("便宜的", f"{prefix}吃什麼 便宜"),
+        QuickReplyItem("近一點", f"{prefix}吃什麼 近一點"),
+        QuickReplyItem("拉麵", f"{prefix}吃什麼 拉麵"),
+    ])

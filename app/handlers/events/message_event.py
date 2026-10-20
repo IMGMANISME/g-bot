@@ -12,7 +12,8 @@ from app.repositories.user_repository import get_user_state
 from app.repositories.notification_repository import get_user_notifications
 from app.handlers.command_handler import command_processor
 from app.services.assistant_service import get_assistant_reply
-from app.views.line_menus import build_quick_intro_message, build_quick_help_message, build_reply_message
+from app.tools.executor import QuickReplyItem
+from app.views.line_menus import build_quick_intro_message, build_quick_help_message, build_reply_message, mention_prefix
 
 logger = setup_logger("message_event")
 
@@ -22,7 +23,10 @@ def handle_reminder_list(event, sender_id: str):
     state = get_user_state(sender_id)
     
     if not notifications:
-        safe_reply(event, "📭 你目前沒有任何提醒喔！")
+        safe_reply_message(event, build_reply_message(
+            "📭 你目前沒有任何提醒。想設的話直接跟我說，例如「明天早上八點提醒我開會」。",
+            [QuickReplyItem("10 分鐘後提醒我", f"{mention_prefix(state)}10分鐘後提醒我喝水")],
+        ))
         return
     
     now = now_taipei()
@@ -57,7 +61,7 @@ def handle_reminder_list(event, sender_id: str):
         safe_reply(event, "\n".join(lines))
 
 @handle_exceptions("⚠️ 對話處理失敗")
-def handle_assistant_message(event, sender_id: str, chat_id: str, memory_id: str, user_input: str, mention_mode: bool):
+def handle_assistant_message(event, sender_id: str, chat_id: str, memory_id: str, user_input: str, prefix: str):
     show_loading_animation(chat_id)
 
     user_name = get_or_fetch_user_name(event, sender_id)
@@ -69,7 +73,7 @@ def handle_assistant_message(event, sender_id: str, chat_id: str, memory_id: str
         memory_user_input=format_user_message_for_memory(event, sender_id, user_input),
         user_name=user_name,
         is_multi_user_chat=is_multi_user_chat(event),
-        mention_prefix="@G-bot " if mention_mode else "",
+        mention_prefix=prefix,
     )
     safe_reply_message(event, build_reply_message(reply.text, reply.quick_replies))
 
@@ -108,9 +112,9 @@ def handle_message(event):
                 special_type = command_result.message.replace("SPECIAL_REPLY:", "")
                 handle_special_reply(event, special_type, chat_id)
             else:
-                safe_reply(event, command_result.message)
+                safe_reply_message(event, build_reply_message(command_result.message, command_result.quick_replies))
         else:
-            safe_reply(event, command_result.message)
+            safe_reply_message(event, build_reply_message(command_result.message, command_result.quick_replies))
         return
 
     state = get_user_state(chat_id)
@@ -128,4 +132,4 @@ def handle_message(event):
                 lowered_input = lowered_input.replace(keyword, "")
             user_input = lowered_input.strip()
         
-    handle_assistant_message(event, sender_id, chat_id, memory_id, user_input, mention_mode="mention" in state)
+    handle_assistant_message(event, sender_id, chat_id, memory_id, user_input, mention_prefix(state))
