@@ -39,4 +39,5 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # 啟動命令
-CMD ["sh", "-c", "python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8787}"]
+# --log-config：uvicorn 的一般訊息寫到 stdout、錯誤寫到 stderr（Railway 會把 stderr 標成錯誤）
+CMD ["sh", "-c", "python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8787} --log-config app/uvicorn_logging.json"]

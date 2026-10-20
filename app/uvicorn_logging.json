@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+  "filters": {
+    "below_error": {"()": "app.utils.log_filters.BelowLevelFilter", "max_level": "ERROR"}
+  },
+  "formatters": {
+    "default": {"()": "uvicorn.logging.DefaultFormatter", "fmt": "%(levelprefix)s %(message)s", "use_colors": null},
+    "access": {"()": "uvicorn.logging.AccessFormatter", "fmt": "%(levelprefix)s %(client_addr)s - \"%(request_line)s\" %(status_code)s"}
+  },
+  "handlers": {
+    "stdout": {"class": "logging.StreamHandler", "stream": "ext://sys.stdout", "formatter": "default", "filters": ["below_error"]},
+    "stderr": {"class": "logging.StreamHandler", "stream": "ext://sys.stderr", "formatter": "default", "level": "ERROR"},
+    "access": {"class": "logging.StreamHandler", "stream": "ext://sys.stdout", "formatter": "access"}
+  },
+  "loggers": {
+    "uvicorn": {"handlers": ["stdout", "stderr"], "level": "INFO", "propagate": false},
+    "uvicorn.error": {"level": "INFO"},
+    "uvicorn.access": {"handlers": ["access"], "level": "INFO", "propagate": false}
+  }
+}

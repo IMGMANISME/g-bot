@@ -8,6 +8,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from app.utils.log_filters import BelowLevelFilter
+
 class ColoredFormatter(logging.Formatter):
     """帶顏色的日誌格式化器"""
     
@@ -54,6 +56,21 @@ class RedactSecretsFilter(logging.Filter):
 _redact_filter = RedactSecretsFilter()
 
 
+def _console_handlers(formatter: logging.Formatter) -> list[logging.Handler]:
+    """INFO、WARNING 寫到 stdout，ERROR 以上寫到 stderr。
+
+    Railway 會把 stderr 一律標成錯誤；分開輸出後，一般訊息不會被誤標，真正的錯誤也會被標出來。
+    """
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.addFilter(BelowLevelFilter(logging.ERROR))
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setLevel(logging.ERROR)
+    for handler in (stdout_handler, stderr_handler):
+        handler.setFormatter(formatter)
+        handler.addFilter(_redact_filter)
+    return [stdout_handler, stderr_handler]
+
+
 def setup_logger(name: str, level: str | None = None) -> logging.Logger:
     """設置日誌記錄器"""
     resolved_level = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
@@ -66,14 +83,12 @@ def setup_logger(name: str, level: str | None = None) -> logging.Logger:
         return logger
     
     # 控制台處理器
-    console_handler = logging.StreamHandler(sys.stdout)
     console_formatter = ColoredFormatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
-    console_handler.setFormatter(console_formatter)
-    console_handler.addFilter(_redact_filter)
-    logger.addHandler(console_handler)
+    for handler in _console_handlers(console_formatter):
+        logger.addHandler(handler)
     
     # 檔案處理器（可選）
     log_dir = Path("logs")
@@ -96,7 +111,7 @@ def setup_logger(name: str, level: str | None = None) -> logging.Logger:
 
 
 def configure_root_logging(level: str | None = None) -> None:
-    """Route third-party logs to stdout so platforms do not mark INFO as errors."""
+    """第三方套件的日誌：一般訊息寫到 stdout、錯誤寫到 stderr，平台才能正確標示嚴重程度。"""
     resolved_level = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, resolved_level, logging.INFO))
@@ -115,10 +130,8 @@ def configure_root_logging(level: str | None = None) -> None:
             handler.addFilter(_redact_filter)
         return
 
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
-    handler.addFilter(_redact_filter)
-    root_logger.addHandler(handler)
+    for handler in _console_handlers(logging.Formatter("%(levelname)s:%(name)s:%(message)s")):
+        root_logger.addHandler(handler)
 
 
 configure_root_logging()
