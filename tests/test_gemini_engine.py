@@ -41,7 +41,7 @@ def model(monkeypatch):
         models = FakeModels()
 
     monkeypatch.setattr(engine, "genai_client", FakeClient())
-    monkeypatch.setattr(engine._generate.retry, "sleep", lambda seconds: None)  # 重試不用真的等
+    monkeypatch.setattr(engine, "_sleep", lambda seconds: None)  # 重試不用真的等
     return state
 
 
@@ -131,3 +131,25 @@ def test_extract_final_reply(raw, expected):
 def test_meta_leak_detection():
     assert engine._contains_meta_leak("Constraint check: no emoji")
     assert not engine._contains_meta_leak("明天記得帶傘")
+
+
+def test_plan_survives_two_server_errors(model):
+    busy = errors.ServerError(500, {"error": {"message": "internal"}})
+    model["replies"] += [busy, busy, response(text("好喔"))]
+    assert engine.plan_reply("s", HISTORY, TOOLS).text == "好喔"
+    assert len(model["requests"]) == engine.PLAN_ATTEMPTS
+
+
+def test_plan_gives_up_after_three_server_errors(model):
+    busy = errors.ServerError(500, {"error": {"message": "internal"}})
+    model["replies"] += [busy, busy, busy]
+    with pytest.raises(engine.GeminiUnavailable) as caught:
+        engine.plan_reply("s", HISTORY, TOOLS)
+    assert caught.value.reply == engine.GENERIC_ERROR_REPLY
+
+
+def test_rewrite_tries_fewer_times(model):
+    busy = errors.ServerError(500, {"error": {"message": "internal"}})
+    model["replies"] += [busy, busy, response(text("不該用到"))]
+    assert engine.reply_with_tool_result("s", HISTORY, TOOLS, WEATHER_CALL, {}) is None
+    assert len(model["requests"]) == engine.REWRITE_ATTEMPTS

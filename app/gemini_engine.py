@@ -1,9 +1,10 @@
 #app/gemini_engine.py
 import re
+import time
 from dataclasses import dataclass
 from google import genai
 from google.genai import errors, types
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_exponential
 from app.config import config
 from app.utils.logger import setup_logger
 
@@ -236,18 +237,31 @@ def _build_generation_config(
     )
 
 
-@retry(
-    retry=retry_if_exception(_is_retryable),
-    stop=stop_after_attempt(2),
-    wait=wait_exponential(multiplier=1, min=2, max=6),
-    reraise=True,
-)
-def _generate(contents: list[types.Content], generation_config: types.GenerateContentConfig):
-    return genai_client.models.generate_content(
+# 判斷要聊天還是用工具：失敗使用者就只會收到錯誤訊息，多重試一次（實測 Gemma 偶爾連續兩次 500）
+PLAN_ATTEMPTS = 3
+# 改寫工具結果：失敗會改用模板，每次又最多等 REWRITE_TIMEOUT_SECONDS，少試一次避免讓使用者等太久
+REWRITE_ATTEMPTS = 2
+RETRY_WAIT = wait_exponential(multiplier=1, min=2, max=6)
+
+
+def _generate(contents: list[types.Content], generation_config: types.GenerateContentConfig, attempts: int):
+    retrying = Retrying(
+        retry=retry_if_exception(_is_retryable),
+        stop=stop_after_attempt(attempts),
+        wait=RETRY_WAIT,
+        sleep=_sleep,
+        reraise=True,
+    )
+    return retrying(
+        genai_client.models.generate_content,
         model=config.GEMINI_MODEL,
         contents=contents,
         config=generation_config,
     )
+
+
+def _sleep(seconds: float) -> None:
+    time.sleep(seconds)
 
 
 def _clean_text(response) -> str | None:
@@ -276,7 +290,7 @@ def plan_reply(system_instruction: str, messages: list, tools: list[types.Tool])
         raise GeminiUnavailable("⚠️ 沒有訊息內容")
 
     try:
-        response = _generate(contents, _build_generation_config(system_instruction, tools, PLAN_TIMEOUT_SECONDS))
+        response = _generate(contents, _build_generation_config(system_instruction, tools, PLAN_TIMEOUT_SECONDS), PLAN_ATTEMPTS)
     except Exception as e:
         raise _to_unavailable(e)
 
@@ -311,7 +325,7 @@ def reply_with_tool_result(
     ))
 
     try:
-        response = _generate(contents, _build_generation_config(system_instruction, tools, REWRITE_TIMEOUT_SECONDS))
+        response = _generate(contents, _build_generation_config(system_instruction, tools, REWRITE_TIMEOUT_SECONDS), REWRITE_ATTEMPTS)
     except Exception as e:
         logger.warning(f"工具結果改寫失敗，改用模板回覆: {e}")
         return None
