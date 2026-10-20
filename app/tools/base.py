@@ -67,6 +67,8 @@ class Tool:
     description: str  # 給模型看的說明：什麼時候該用這個工具
     parameters: dict | None  # JSON Schema 風格的參數定義（type 用大寫：OBJECT、STRING…）
     handler: ToolHandler
+    # 結果是否交給模型改寫成口語；False 直接用 fallback_text 回覆，少等一次模型
+    rewrite: bool = True
 
     def declaration(self) -> types.FunctionDeclaration:
         return types.FunctionDeclaration(name=self.name, description=self.description, parameters=self.parameters)
@@ -75,15 +77,23 @@ class Tool:
 TOOL_REGISTRY: dict[str, Tool] = {}
 
 
-def tool(name: str, description: str, parameters: dict | None = None) -> Callable[[ToolHandler], ToolHandler]:
-    """註冊一個工具。parameters 可以只寫 properties（會自動包成 OBJECT），也可以給完整的 schema。"""
+def tool(
+    name: str,
+    description: str,
+    parameters: dict | None = None,
+    rewrite: bool = True,
+) -> Callable[[ToolHandler], ToolHandler]:
+    """註冊一個工具。parameters 可以只寫 properties（會自動包成 OBJECT），也可以給完整的 schema。
+
+    rewrite=False：結果以時間、數字等事實為主（例如提醒、現在時間），直接用模板回覆，又快又準。
+    """
     if parameters is not None and parameters.get("type") != "OBJECT":
         parameters = {"type": "OBJECT", "properties": parameters}
 
     def register(handler: ToolHandler) -> ToolHandler:
         if name in TOOL_REGISTRY and TOOL_REGISTRY[name].handler is not handler:
             raise ValueError(f"工具名稱重複: {name}")
-        TOOL_REGISTRY[name] = Tool(name, description, parameters, handler)
+        TOOL_REGISTRY[name] = Tool(name, description, parameters, handler, rewrite)
         return handler
 
     return register
@@ -98,6 +108,11 @@ def load_tools() -> dict[str, Tool]:
 def gemini_tools() -> list[types.Tool]:
     """提供給 Gemini 的工具清單"""
     return [types.Tool(function_declarations=[t.declaration() for t in load_tools().values()])]
+
+
+def should_rewrite(name: str) -> bool:
+    registered = load_tools().get(name)
+    return registered.rewrite if registered else True
 
 
 def execute_tool(name: str, args: dict, ctx: ToolContext) -> ToolResult:

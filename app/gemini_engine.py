@@ -158,7 +158,7 @@ QUOTA_ERROR_REPLY = "⚠️ 我今天講太多話了，AI 額度暫時用完，�
 GENERIC_ERROR_REPLY = "⚠️ 我現在有點忙不過來，請等一下再問我一次。"
 
 PLAN_TIMEOUT_SECONDS = 45  # 判斷要聊天還是用工具
-REWRITE_TIMEOUT_SECONDS = 25  # 把工具結果改寫成口語，超過就改用模板
+REWRITE_TIMEOUT_SECONDS = 8  # 把工具結果改寫成口語，超過就改用模板（使用者已經等過一次判斷了）
 MAX_HISTORY_MESSAGES = 10
 
 

@@ -8,6 +8,7 @@ GET_CURRENT_TIME = "get_current_time"
 @tool(
     name=GET_CURRENT_TIME,
     description="取得現在的日期、時間與星期。使用者問現在幾點、今天幾號、星期幾時使用。",
+    rewrite=False,
 )
 def get_current_time(args: dict, ctx: ToolContext) -> ToolResult:
     now = ctx.now

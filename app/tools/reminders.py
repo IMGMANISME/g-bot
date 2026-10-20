@@ -77,6 +77,7 @@ INTERVAL_SUGGESTIONS = (60, 120, 180)
         },
         "required": ["content"],
     },
+    rewrite=False,  # 時間與內容要準確，直接用模板回覆
 )
 def create_reminder(args: dict, ctx: ToolContext) -> ToolResult:
     content = str(args.get("content") or "").strip()

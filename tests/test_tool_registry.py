@@ -49,3 +49,10 @@ def test_duplicate_tool_name_is_rejected(temporary_tool):
         @tool(name="echo_for_test", description="第二個")
         def second(args, ctx):
             return ToolResult({}, "")
+
+
+def test_fact_based_tools_skip_rewrite():
+    from app.tools.base import should_rewrite
+    assert not should_rewrite("create_reminder") and not should_rewrite("get_current_time")
+    assert should_rewrite("get_weather") and should_rewrite("recommend_restaurants")
+    assert should_rewrite("unknown_tool")

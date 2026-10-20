@@ -58,18 +58,39 @@ def test_chat_calls_model_once_and_saves(flow):
 
 
 def test_model_chosen_tool_is_executed_and_rewritten(flow):
-    call = types.FunctionCall(name="create_reminder", args={"datetime": "2026-10-21 08:00", "content": "開會", "repeat_daily": False})
+    call = types.FunctionCall(name="get_weather", args={"city": "高雄市", "focus": "rain"})
     content = types.Content(role="model", parts=[types.Part(function_call=call)])
     flow["plan"] = ModelTurn(function_call=call, content=content)
-    flow["rewrite"] = "好喔，明天 08:00 叫你開會"
-    flow["tool_result"] = ToolResult({"status": "created"}, "模板", quick_replies=[QuickReplyItem("取消這個提醒", "取消提醒 1")])
+    flow["rewrite"] = "高雄明天七成會下雨，記得帶傘"
+    flow["tool_result"] = ToolResult({"rain": 70}, "模板", quick_replies=[QuickReplyItem("按鈕", "x")])
 
-    reply = ask("明天早上八點叫我開會", prefix="@G-bot ")
+    reply = ask("高雄會不會下", prefix="@G-bot ")
     assert steps(flow) == ["plan", "tool", "rewrite"]
     assert flow["calls"][1][3] == "@G-bot "  # 標記模式前綴傳給工具
     assert flow["calls"][2][3] is content  # 改寫時附上模型原始回覆
-    assert reply.text == "好喔，明天 08:00 叫你開會"
+    assert reply.text == "高雄明天七成會下雨，記得帶傘"
+    assert reply.quick_replies[0].label == "按鈕"
+
+
+def test_reminder_result_uses_template_without_rewrite(flow):
+    """提醒以時間、內容等事實為主：直接用模板回覆，少等一次模型"""
+    call = types.FunctionCall(name="create_reminder", args={"datetime": "2026-10-21 08:00", "content": "開會"})
+    flow["plan"] = ModelTurn(function_call=call, content=types.Content(role="model", parts=[types.Part(function_call=call)]))
+    flow["rewrite"] = "不該被用到"
+    flow["tool_result"] = ToolResult({"status": "created"}, "⏰ 好，明天 08:00 提醒你「開會」",
+                                     quick_replies=[QuickReplyItem("取消這個提醒", "取消提醒 1")])
+    reply = ask("明天早上八點叫我開會")
+    assert steps(flow) == ["plan", "tool"]
+    assert reply.text == "⏰ 好，明天 08:00 提醒你「開會」"
     assert reply.quick_replies[0].label == "取消這個提醒"
+
+
+def test_recurring_reminder_fast_path_needs_no_model_at_all(flow):
+    flow["tool_result"] = ToolResult({"status": "needs_confirmation"}, "確認一下：", attachment="📋 卡片")
+    reply = ask("每五分鐘提醒我測試")
+    assert steps(flow) == ["tool"]
+    assert flow["calls"][0][1:3] == ("create_reminder", {"content": "測試", "interval_minutes": 5})
+    assert reply.text == "確認一下：\n\n📋 卡片"
 
 
 def test_fast_path_skips_planning(flow):
@@ -82,7 +103,7 @@ def test_fast_path_skips_planning(flow):
 
 def test_rewrite_failure_falls_back_to_template(flow):
     flow["rewrite"] = None
-    reply = ask("現在幾點")
+    reply = ask("台北天氣")
     assert reply.text == "模板回覆"
     assert flow["memory"]["M1"][-1] == {"role": "assistant", "content": "模板回覆"}
 
