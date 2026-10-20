@@ -208,6 +208,8 @@ Database tests need a PostgreSQL database **you can wipe**. They run only when `
 TEST_DATABASE_URL=postgresql://user@localhost:5432/gbot_test pytest
 ```
 
+GitHub Actions (`.github/workflows/tests.yml`) runs the full suite, including the database tests, on every push to `main` and on every pull request.
+
 To check how the real Gemma model behaves (tool choice, reply tone), use the scripts in `scripts/`. They need `GEMINI_API_KEY`:
 
 ```bash

@@ -1,0 +1,48 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gbot
+          POSTGRES_PASSWORD: gbot
+          POSTGRES_DB: gbot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gbot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # 資料庫測試會清空這個資料庫，只用 CI 內建的 PostgreSQL
+      TEST_DATABASE_URL: postgresql://gbot:gbot@localhost:5432/gbot_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"  # 與 Dockerfile 一致
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest -rs

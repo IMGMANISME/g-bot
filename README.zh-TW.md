@@ -208,6 +208,8 @@ pytest
 TEST_DATABASE_URL=postgresql://user@localhost:5432/gbot_test pytest
 ```
 
+每次 push 到 `main` 或開 Pull Request 時，GitHub Actions（`.github/workflows/tests.yml`）會自動執行全部測試，包含資料庫測試。
+
 要確認真的 Gemma 表現（工具選擇、改寫口吻），可以用 `scripts/` 下的實測腳本，需要 `GEMINI_API_KEY`：
 
 ```bash
