@@ -9,6 +9,7 @@ from linebot.v3 import WebhookHandler
 
 import app.handlers.events.location_event as location_event
 import app.handlers.events.message_event as message_event
+import app.handlers.events.postback_event as postback_event
 import app.line_bot as line_bot
 import app.repositories.user_repository as user_repository
 import app.utils.line_utils as line_utils
@@ -36,7 +37,7 @@ def bot(monkeypatch):
     monkeypatch.setattr(line_utils, "messaging_api", FakeMessagingApi())
     monkeypatch.setattr(line_bot, "background_executor", SyncExecutor())
     get_state = lambda chat_id: state["states"].get(chat_id, "active")
-    for module in (user_repository, location_event, message_event):
+    for module in (user_repository, location_event, message_event, postback_event):
         monkeypatch.setattr(module, "get_user_state", get_state)
     monkeypatch.setattr(location_event, "upsert_user_location", lambda sid, lat, lng: state["locations"].append((sid, lat, lng)))
     monkeypatch.setattr(message_event, "get_user_notifications", lambda sid: [])
@@ -196,3 +197,50 @@ def test_setting_threshold_turns_alerts_on(bot, earthquake_settings):
 def test_welcome_mentions_earthquake_alerts(bot):
     reply = bot["send"](event("follow", USER, follow={"isUnblocked": False}))
     assert "地震通知開" in reply.text
+
+
+@pytest.fixture
+def echo_action():
+    from app.tools.base import ACTION_REGISTRY, ToolResult, action
+
+    @action("echo_test")
+    def echo(params, ctx):
+        return ToolResult({}, f"收到 {params} 來自 {ctx.chat_id}，前綴「{ctx.mention_prefix}」")
+
+    yield
+    ACTION_REGISTRY.pop("echo_test", None)
+
+
+def test_postback_runs_action_without_mention(bot, echo_action):
+    payload = event("postback", MENTION_GROUP, postback={"data": "echo_test:42"})
+    reply = bot["send"](payload)
+    # 標記模式的群組也不用 @G-bot：按鈕直接處理
+    assert reply.text == "收到 ['42'] 來自 G_mention，前綴「@G-bot 」"
+
+
+def test_unknown_postback_is_explained(bot):
+    reply = bot["send"](event("postback", USER, postback={"data": "gone:1"}))
+    assert "失效" in reply.text
+
+
+def test_postback_button_is_built_with_display_text():
+    from app.tools.base import QuickReplyItem
+    from app.views.line_menus import build_reply_message
+
+    message = build_reply_message("確認？", [QuickReplyItem("確定建立", data="reminder_confirm:abc"), QuickReplyItem("改", "改成每1小時")])
+    postback, text = [item.action for item in message.quick_reply.items]
+    assert type(postback).__name__ == "PostbackAction"
+    assert (postback.data, postback.display_text) == ("reminder_confirm:abc", "確定建立")
+    assert type(text).__name__ == "MessageAction" and text.text == "改成每1小時"
+
+
+def test_reminder_list_shows_recurrence(bot, monkeypatch):
+    from datetime import time
+    from app.repositories.notification_repository import NotificationRecord
+    from app.utils.time_utils import now_taipei
+    soon = now_taipei().replace(second=0, microsecond=0)
+    monkeypatch.setattr(message_event, "get_user_notifications", lambda sid: [
+        NotificationRecord(7, "U1", "喝水", False, soon, 120, time(9), time(21)),
+    ])
+    reply = bot["send"](text_event(USER, "我的提醒"))
+    assert "• 編號 7｜每 2 小時（09:00–21:00），下一次今天" in reply.text

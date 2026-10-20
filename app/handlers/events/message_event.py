@@ -1,6 +1,7 @@
 from app.config import config
 from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions, rate_limit
+from app.services.reminder_schedule import describe_recurrence
 from app.utils.time_utils import format_run_at, now_taipei
 from app.utils.line_utils import (
     get_sender_id, get_chat_id, safe_reply, safe_reply_message, show_loading_animation,
@@ -31,7 +32,10 @@ def handle_reminder_list(event, sender_id: str):
     now = now_taipei()
     lines = ["📋你的提醒列表："]
     for b in notifications:
-        when = format_run_at(b.next_run_at, b.repeat_daily, now)
+        if b.is_recurring:
+            when = f"{describe_recurrence(b.interval_minutes, b.window)}，下一次{format_run_at(b.next_run_at, False, now)}"
+        else:
+            when = format_run_at(b.next_run_at, b.repeat_daily, now)
         lines.append(f"• 編號 {b.id}｜{when}｜{b.message}")
 
     if len(notifications) > 8:

@@ -11,6 +11,7 @@ from app.repositories.notification_repository import (
 from app.repositories.system_state_repository import try_acquire_job_lock
 from app.utils.line_utils import PushResult, push_line_message_to_users
 from app.utils.logger import setup_logger
+from app.services.reminder_schedule import next_interval_run
 from app.utils.time_utils import ONE_DAY, TAIPEI, advance_daily, format_run_at, now_taipei
 
 logger = setup_logger("scheduler")
@@ -24,6 +25,8 @@ RETRY_WINDOW = timedelta(minutes=10)
 
 def _latest_due_time(task: NotificationRecord, now: datetime) -> datetime:
     """這次應該送出的時間；每日提醒錯過多天時，以最近一次為準。"""
+    if task.is_recurring:
+        return task.next_run_at
     if task.repeat_daily:
         return advance_daily(task.next_run_at, now) - ONE_DAY
     return task.next_run_at
@@ -69,7 +72,9 @@ def check_and_send_notifications():
             elif result is PushResult.FAILED:
                 logger.error(f"提醒 {task.id} 無法送達（可能已被封鎖），不再重試這一次")
 
-            if task.repeat_daily:
+            if task.is_recurring:
+                reschedule_notification(task.id, next_interval_run(task.next_run_at, task.interval_minutes, task.window, now))
+            elif task.repeat_daily:
                 reschedule_notification(task.id, advance_daily(task.next_run_at, now))
             else:
                 delete_notification(task.id)

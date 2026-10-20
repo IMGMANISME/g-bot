@@ -221,3 +221,16 @@ def get_message_quota() -> dict:
     except Exception as e:
         logger.warning(f"無法取得訊息額度: {e}")
         return {"error": str(e)}
+
+
+def get_chat_member_count(chat_id: str) -> int | None:
+    """聊天室人數：一對一為 1，群組／聊天室向 LINE 查詢；查不到回傳 None。"""
+    try:
+        if chat_id.startswith("C"):
+            return messaging_api.get_group_member_count(chat_id).count
+        if chat_id.startswith("R"):
+            return messaging_api.get_room_member_count(chat_id).count
+        return 1
+    except Exception as e:
+        logger.warning(f"無法取得聊天室人數: {e}")
+        return None

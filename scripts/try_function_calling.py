@@ -1,75 +1,33 @@
-"""實測 Gemma 的 Function Calling 能力（階段 1 評估用，不影響線上服務）。
+"""實測 Gemma 的 Function Calling 能力：用 app 實際註冊的工具，檢查是否選對工具與參數。
 
 用法（金鑰從環境變數讀取，不會印出）：
     GEMINI_API_KEY=... python scripts/try_function_calling.py
 
-檢查項目：是否選對工具、參數是否正確、每則花費時間。
+新增工具或修改工具說明後跑一次，確認模型仍能正確選擇。
 """
 import os
 import sys
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from google import genai
 from google.genai import errors, types
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# 匯入 app 前先給必要設定的假值（只讀取工具定義，不會連資料庫或 LINE）
+os.environ.setdefault("DATABASE_URL", "postgresql://fake:fake@localhost:5432/fake")
+os.environ.setdefault("LINE_CHANNEL_ACCESS_TOKEN", "fake")
+os.environ.setdefault("LOG_LEVEL", "WARNING")
+
+from app.services.reminder_schedule import parse_clock  # noqa: E402
+from app.tools.base import gemini_tools  # noqa: E402
+
 MODEL = os.getenv("GEMINI_MODEL", "gemma-4-26b-a4b-it")
 TZ = ZoneInfo("Asia/Taipei")
 WEEKDAYS = "一二三四五六日"
 REQUEST_INTERVAL_SECONDS = 4  # 避免撞到免費方案每分鐘請求上限
-
-TOOLS = types.Tool(function_declarations=[
-    types.FunctionDeclaration(
-        name="get_weather",
-        description="查詢台灣縣市的天氣預報。使用者詢問天氣、會不會下雨、冷不冷、溫度時使用。",
-        parameters={
-            "type": "OBJECT",
-            "properties": {
-                "city": {"type": "STRING", "description": "縣市全名，例如 臺北市、高雄市、花蓮縣。使用者沒提到時留空"},
-                "date": {"type": "STRING", "description": "要查詢的日期，格式 YYYY-MM-DD；沒有指定日期時留空"},
-                "focus": {
-                    "type": "STRING",
-                    "enum": ["rain", "temperature", "general"],
-                    "description": "使用者最關心的面向：rain 降雨、temperature 冷熱溫度、general 一般",
-                },
-            },
-        },
-    ),
-    types.FunctionDeclaration(
-        name="create_reminder",
-        description=(
-            "建立提醒。只有在使用者明確要求「提醒我」「叫我」「記得通知我」之類的請求時才使用；"
-            "單純陳述行程（例如「我明天要開會」）不要使用。"
-        ),
-        parameters={
-            "type": "OBJECT",
-            "properties": {
-                "datetime": {"type": "STRING", "description": "提醒時間，格式 YYYY-MM-DD HH:MM（台北時間）"},
-                "content": {"type": "STRING", "description": "提醒內容，例如 開會、吃藥"},
-                "repeat_daily": {"type": "BOOLEAN", "description": "是否每天重複"},
-            },
-            "required": ["datetime", "content", "repeat_daily"],
-        },
-    ),
-    types.FunctionDeclaration(
-        name="recommend_restaurants",
-        description="推薦使用者附近的餐廳。使用者想找東西吃、問吃什麼、要餐廳推薦時使用。",
-        parameters={
-            "type": "OBJECT",
-            "properties": {
-                "price": {"type": "STRING", "enum": ["cheap", "medium", "expensive", "any"], "description": "價位"},
-                "cuisine": {"type": "STRING", "description": "料理類型，例如 拉麵、火鍋；沒指定時留空"},
-                "max_distance_m": {"type": "INTEGER", "description": "最遠距離（公尺）；沒指定時留空"},
-            },
-        },
-    ),
-    types.FunctionDeclaration(
-        name="get_current_time",
-        description="取得現在的日期、時間與星期。使用者問現在幾點、今天幾號、星期幾時使用。",
-    ),
-])
-
 
 def build_system_instruction(now: datetime) -> str:
     return (
@@ -105,6 +63,10 @@ def check_fields(**expected):
                 ok = norm_city(got) == norm_city(want)
             elif key == "content":
                 ok = want in str(got or "")
+            elif key in ("window_start", "window_end"):
+                ok = parse_clock(got) == parse_clock(want)  # 9:00 與 09:00 視為相同
+            elif key == "interval_minutes" and got is not None:
+                ok = want is not None and int(got) == want
             else:
                 ok = got == want
             if not ok:
@@ -127,7 +89,7 @@ def build_cases(now: datetime) -> list[tuple[str, str | None, list]]:
     return [
         # (訊息, 預期工具（None 代表不該用工具）, 參數檢查)
         ("明天早上八點叫我開會", "create_reminder",
-         [check_datetime(at(tomorrow, 8)), check_fields(content="開會", repeat_daily=False)]),
+         [check_datetime(at(tomorrow, 8)), check_fields(content="開會", repeat_daily=False, interval_minutes=None)]),
         ("30分鐘後提醒我關火", "create_reminder",
          [check_datetime(now + timedelta(minutes=30), tolerance_minutes=2), check_fields(content="關火")]),
         ("每天晚上十點提醒我吃藥", "create_reminder",
@@ -142,6 +104,13 @@ def build_cases(now: datetime) -> list[tuple[str, str | None, list]]:
         ("附近有什麼便宜的拉麵", "recommend_restaurants", [check_fields(price="cheap", cuisine="拉麵")]),
         ("晚餐不知道要吃什麼", "recommend_restaurants", []),
         ("現在幾點", "get_current_time", []),
+        # 週期提醒
+        ("每兩小時提醒我喝水", "create_reminder", [check_fields(content="喝水", interval_minutes=120)]),
+        ("早上九點到下午六點，每小時提醒我起來動一動", "create_reminder",
+         [check_fields(interval_minutes=60, window_start="09:00", window_end="18:00")]),
+        ("整天每三小時提醒我吃藥", "create_reminder",
+         [check_fields(content="吃藥", interval_minutes=180, window_start="00:00", window_end="00:00")]),
+        ("每30分鐘提醒我看一下烤箱", "create_reminder", [check_fields(interval_minutes=30)]),
         ("我今天好累", None, []),
         ("我明天要開會", None, []),
         ("你覺得台北好玩嗎", None, []),
@@ -172,7 +141,7 @@ def main():
     now = datetime.now(TZ)
     config = types.GenerateContentConfig(
         system_instruction=build_system_instruction(now),
-        tools=[TOOLS],
+        tools=gemini_tools(),
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         temperature=0.2,
     )

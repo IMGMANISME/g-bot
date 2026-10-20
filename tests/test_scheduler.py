@@ -106,3 +106,18 @@ def test_job_skipped_without_lock(store, now, monkeypatch):
     store["add"](record(1, "開會", now - timedelta(seconds=30)))
     scheduler.check_and_send_notifications()
     assert store["pushed"] == []
+
+
+def test_recurring_reminder_moves_to_next_interval(store, now):
+    from datetime import time
+    store["add"](NotificationRecord(1, "U1", "喝水", False, now - timedelta(seconds=30), 120, time(9), time(21)))
+    scheduler.check_and_send_notifications()
+    assert store["pushed"] == ["⏰ 提醒你：喝水"]
+    assert store["rows"][1].next_run_at == now - timedelta(seconds=30) + timedelta(hours=2)
+
+
+def test_last_recurring_reminder_of_the_day_moves_to_tomorrow(store, now):
+    from datetime import time
+    store["add"](NotificationRecord(1, "U1", "喝水", False, now - timedelta(seconds=30), 120, time(9), time(14, 30)))
+    scheduler.check_and_send_notifications()
+    assert store["rows"][1].next_run_at == now.replace(hour=9, minute=0) + timedelta(days=1)

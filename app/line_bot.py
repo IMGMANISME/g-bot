@@ -1,9 +1,10 @@
 from linebot.v3 import WebhookHandler
-from linebot.v3.webhooks import FollowEvent, JoinEvent, LocationMessageContent, MessageEvent, TextMessageContent
+from linebot.v3.webhooks import FollowEvent, JoinEvent, LocationMessageContent, MessageEvent, PostbackEvent, TextMessageContent
 import time
 from concurrent.futures import ThreadPoolExecutor
 from app.handlers.events.location_event import handle_location
 from app.handlers.events.message_event import handle_message
+from app.handlers.events.postback_event import handle_postback
 from app.handlers.events.welcome_event import handle_follow, handle_join
 from app.utils.logger import setup_logger
 from app.utils.performance import performance_monitor
@@ -64,3 +65,8 @@ def handle_events(handler: WebhookHandler):
     def wrapper_handle_join(event):
         logger.info("收到加入群組事件")
         _run_in_background("join", handle_join, event)
+
+    @handler.add(PostbackEvent)
+    def wrapper_handle_postback(event):
+        logger.info("收到按鈕 Postback 事件")
+        _run_in_background("postback", handle_postback, event)

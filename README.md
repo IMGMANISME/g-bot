@@ -392,8 +392,13 @@ docker run -d \
 ```
 提醒我 開會 14:30          # Remind me about a meeting at 14:30
 提醒我 喝水 09:00 每天      # Remind me to drink water at 09:00 daily
+明天早上八點叫我開會        # Natural language: tomorrow at 8 a.m.
+每兩小時提醒我喝水          # Recurring: every 2 hours
+早上九點到下午六點，每小時提醒我起來動一動  # Recurring within a time window
 取消提醒 1                  # Cancel reminder #1
 ```
+
+Before a recurring reminder is created, the bot shows the frequency, runs per day and estimated push usage, and waits for **確定建立** (Confirm). The window defaults to 09:00–21:00 and may cross midnight (e.g. 22:00–02:00).
  
 ### Earthquake Notifications
  

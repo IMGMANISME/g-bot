@@ -20,7 +20,7 @@ def test_parameters_shorthand_is_wrapped_as_object():
     weather = load_tools()["get_weather"]
     assert weather.parameters["type"] == "OBJECT"
     assert set(weather.parameters["properties"]) == {"city", "date", "focus"}
-    assert load_tools()["create_reminder"].parameters["required"] == ["datetime", "content", "repeat_daily"]
+    assert load_tools()["create_reminder"].parameters["required"] == ["content"]
     assert load_tools()["get_current_time"].parameters is None
 
 

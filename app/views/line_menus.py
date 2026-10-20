@@ -1,6 +1,7 @@
 from linebot.v3.messaging import (
     LocationAction,
     MessageAction,
+    PostbackAction,
     QuickReply,
     QuickReplyItem as LineQuickReplyItem,
     TextMessage,
@@ -15,13 +16,18 @@ def create_quick_reply_buttons(items: list) -> QuickReply:
                for label, text in items]
     return QuickReply(items=buttons)
 
+def _button_action(item: QuickReplyItem):
+    if item.data is not None:
+        # Postback：聊天室顯示按鈕文字，程式收到 data 直接處理
+        return PostbackAction(label=item.label, data=item.data, display_text=item.label)
+    if item.text is None:
+        return LocationAction(label=item.label)
+    return MessageAction(label=item.label, text=item.text)
+
+
 def build_reply_message(text: str, quick_replies: list[QuickReplyItem]) -> TextMessage:
-    """文字回覆，可附快速回覆按鈕；text 為 None 的按鈕是「傳送位置」。"""
-    buttons = [
-        LineQuickReplyItem(action=LocationAction(label=item.label) if item.text is None
-                           else MessageAction(label=item.label, text=item.text))
-        for item in quick_replies[:13]
-    ]
+    """文字回覆，可附快速回覆按鈕：一般文字、Postback（data）、傳送位置（text 與 data 都是 None）。"""
+    buttons = [LineQuickReplyItem(action=_button_action(item)) for item in quick_replies[:13]]
     return TextMessage(
         text=text[:LINE_TEXT_LIMIT],
         quick_reply=QuickReply(items=buttons) if buttons else None,

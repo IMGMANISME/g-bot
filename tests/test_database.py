@@ -170,3 +170,15 @@ def test_migration_0002_turns_existing_alerts_off(empty_db):
         assert connection.execute(text("SELECT earthquake_enabled FROM user_state WHERE sender_id = 'C_old'")).scalar() is False
         connection.execute(text("INSERT INTO user_state (sender_id) VALUES ('C_new')"))
         assert connection.execute(text("SELECT earthquake_enabled FROM user_state WHERE sender_id = 'C_new'")).scalar() is False
+
+
+def test_recurring_reminder_roundtrip(db, now):
+    from datetime import time
+    from app.repositories import notification_repository as repo
+    from app.services.reminder_schedule import Window
+
+    created = repo.add_scheduled_notification("U1", "喝水", now + timedelta(hours=2), False, 120, Window(time(22), time(2)))
+    loaded = repo.get_user_notifications("U1")[0]
+    assert loaded.id == created.id and loaded.is_recurring
+    assert (loaded.interval_minutes, loaded.window) == (120, Window(time(22), time(2)))
+    assert loaded.last_done_at is None

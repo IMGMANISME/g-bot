@@ -4,6 +4,9 @@
 新增功能時，在 app/tools/ 下新增一個模組，用 @tool 註冊即可：模型會自動知道這個工具，
 不用修改對話流程。記得把模組加進 TOOL_MODULES。
 
+工具回覆可以附 Postback 按鈕（QuickReplyItem 的 data），按下後由同一個模組裡用 @action
+註冊的函式直接處理，不經過模型，回覆又快又準。
+
     @tool(
         name="get_current_time",
         description="使用者問現在幾點時使用。",
@@ -107,3 +110,43 @@ def execute_tool(name: str, args: dict, ctx: ToolContext) -> ToolResult:
     except Exception as e:
         logger.error(f"工具 {name} 執行失敗: {e}", exc_info=True)
         return ToolResult(data={"error": "工具執行失敗"}, fallback_text="⚠️ 我剛剛處理的時候出了點問題，請再試一次。")
+
+
+# --- 按鈕動作（Postback） ---
+
+ActionHandler = Callable[[list[str], ToolContext], ToolResult]
+ACTION_REGISTRY: dict[str, ActionHandler] = {}
+ACTION_SEPARATOR = ":"
+
+
+def action(name: str) -> Callable[[ActionHandler], ActionHandler]:
+    """註冊按鈕動作；按鈕的 data 用 postback_data(name, ...) 產生。"""
+    if ACTION_SEPARATOR in name:
+        raise ValueError(f"動作名稱不能包含「{ACTION_SEPARATOR}」: {name}")
+
+    def register(handler: ActionHandler) -> ActionHandler:
+        if name in ACTION_REGISTRY and ACTION_REGISTRY[name] is not handler:
+            raise ValueError(f"動作名稱重複: {name}")
+        ACTION_REGISTRY[name] = handler
+        return handler
+
+    return register
+
+
+def postback_data(name: str, *params) -> str:
+    return ACTION_SEPARATOR.join([name, *(str(p) for p in params)])
+
+
+def run_action(data: str, ctx: ToolContext) -> ToolResult:
+    """處理按鈕的 Postback；只回覆 fallback_text 與 quick_replies，不經過模型。"""
+    name, *params = (data or "").split(ACTION_SEPARATOR)
+    load_tools()
+    handler = ACTION_REGISTRY.get(name)
+    if not handler:
+        logger.warning(f"收到不認識的按鈕動作: {data!r}")
+        return ToolResult({}, "這個按鈕已經失效了，再跟我說一次要做什麼吧。")
+    try:
+        return handler(params, ctx)
+    except Exception as e:
+        logger.error(f"按鈕動作 {name} 執行失敗: {e}", exc_info=True)
+        return ToolResult({}, "⚠️ 我剛剛處理的時候出了點問題，請再試一次。")

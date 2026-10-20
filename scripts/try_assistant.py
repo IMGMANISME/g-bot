@@ -48,11 +48,16 @@ assistant.get_history = lambda memory_id: list(memory.get(memory_id, []))
 _next_id = iter(range(1, 1000))
 
 
-def fake_add_notification(sender_id, message, run_at, repeat_daily):
-    return notification_repo.NotificationRecord(next(_next_id), sender_id, message, repeat_daily, run_at)
+def fake_add_notification(sender_id, message, run_at, repeat_daily, interval_minutes=None, window=None):
+    return notification_repo.NotificationRecord(
+        next(_next_id), sender_id, message, repeat_daily, run_at, interval_minutes,
+        window.start if window else None, window.end if window else None,
+    )
 
 
 reminder_tools.add_scheduled_notification = fake_add_notification
+reminder_tools.get_chat_member_count = lambda chat_id: 1
+reminder_tools.get_message_quota = lambda: {"type": "limited", "limit": 200, "used": 20}
 
 # --- 假的天氣資料：明天下雨、週五偏冷 ---
 NOW = now_taipei()
@@ -128,6 +133,7 @@ CASES = [
     ("明天早上八點叫我開會", "U2", "應確認明天 08:00 提醒開會"),
     ("30分鐘後提醒我關火", "U2", f"應確認約 {(NOW + timedelta(minutes=30)):%H:%M} 提醒關火"),
     ("提醒我 繳電費 23:30", "U2", "快速通道；應確認 23:30 提醒繳電費"),
+    ("每兩小時提醒我喝水", "U5", "應請使用者確認（還沒建立），後面附設定卡片與「確定建立」按鈕"),
     ("附近有什麼好吃的拉麵", "U3", "應一兩句開場，後面附清單"),
     ("吃什麼", "U_noloc", "應請使用者傳位置"),
     ("現在幾點", "U1", f"應回答約 {NOW:%H:%M}"),

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, DateTime, Boolean
+from sqlalchemy import Column, String, Integer, DateTime, Boolean, Time
 from datetime import datetime
 from app.models.base import Base
 
@@ -9,4 +9,9 @@ class ScheduledNotification(Base):
     message = Column(String)
     repeat_daily = Column(Boolean, nullable=False, default=False)
     next_run_at = Column(DateTime(timezone=True), nullable=False, index=True)  # 下一次要送出的時間
+    # 週期提醒：每隔 interval_minutes 分鐘提醒一次，只在 window_start～window_end 之間（可跨午夜；都是 NULL 代表整天）
+    interval_minutes = Column(Integer, nullable=True)
+    window_start = Column(Time, nullable=True)
+    window_end = Column(Time, nullable=True)
+    last_done_at = Column(DateTime(timezone=True), nullable=True)  # 使用者最近一次回報「做完了」
     created_at = Column(DateTime, default=datetime.utcnow)

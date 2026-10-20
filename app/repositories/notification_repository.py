@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import datetime, time
 from dataclasses import dataclass
 
 from app.database import SessionLocal
 from app.models.notification import ScheduledNotification
+from app.services.reminder_schedule import Window, make_window
 from app.utils.time_utils import to_taipei
 
 
@@ -13,6 +14,18 @@ class NotificationRecord:
     message: str
     repeat_daily: bool
     next_run_at: datetime  # 台北時間
+    interval_minutes: int | None = None  # 週期提醒的間隔
+    window_start: time | None = None
+    window_end: time | None = None
+    last_done_at: datetime | None = None
+
+    @property
+    def is_recurring(self) -> bool:
+        return bool(self.interval_minutes)
+
+    @property
+    def window(self) -> Window | None:
+        return make_window(self.window_start, self.window_end)
 
 
 def _to_record(notification: ScheduledNotification) -> NotificationRecord:
@@ -22,10 +35,21 @@ def _to_record(notification: ScheduledNotification) -> NotificationRecord:
         message=notification.message,
         repeat_daily=notification.repeat_daily,
         next_run_at=to_taipei(notification.next_run_at),
+        interval_minutes=notification.interval_minutes,
+        window_start=notification.window_start,
+        window_end=notification.window_end,
+        last_done_at=to_taipei(notification.last_done_at) if notification.last_done_at else None,
     )
 
 
-def add_scheduled_notification(sender_id: str, message: str, run_at: datetime, repeat_daily: bool) -> NotificationRecord:
+def add_scheduled_notification(
+    sender_id: str,
+    message: str,
+    run_at: datetime,
+    repeat_daily: bool,
+    interval_minutes: int | None = None,
+    window: Window | None = None,
+) -> NotificationRecord:
     run_at = to_taipei(run_at)
     with SessionLocal() as db:
         notification = ScheduledNotification(
@@ -33,6 +57,9 @@ def add_scheduled_notification(sender_id: str, message: str, run_at: datetime, r
             message=message,
             repeat_daily=repeat_daily,
             next_run_at=run_at,
+            interval_minutes=interval_minutes,
+            window_start=window.start if window else None,
+            window_end=window.end if window else None,
         )
         db.add(notification)
         db.commit()
