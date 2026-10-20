@@ -1,7 +1,9 @@
 """實測 Gemma 的 Function Calling 能力：用 app 實際註冊的工具，檢查是否選對工具與參數。
 
 用法（金鑰從環境變數讀取，不會印出）：
-    GEMINI_API_KEY=... python scripts/try_function_calling.py
+    GEMINI_API_KEY=... python scripts/try_function_calling.py              # 全部
+    GEMINI_API_KEY=... python scripts/try_function_calling.py 1 5 12       # 只跑指定的句子
+    TOOL_SET=basic GEMINI_API_KEY=... python scripts/try_function_calling.py  # 只給最早的 4 個工具（比較用）
 
 新增工具或修改工具說明後跑一次，確認模型仍能正確選擇。
 """
@@ -132,6 +134,17 @@ def build_cases(now: datetime) -> list[tuple[str, str | None, list]]:
 SERVER_ERRORS = 0  # 遇到幾次 Google 端的 5xx（重試前也算）
 
 
+BASIC_TOOLS = {"get_weather", "create_reminder", "recommend_restaurants", "get_current_time"}
+
+
+def selected_tools() -> list[types.Tool]:
+    """TOOL_SET=basic 時只給最早的 4 個工具，用來比較工具數量是否影響錯誤率"""
+    tools = gemini_tools()
+    if os.getenv("TOOL_SET") != "basic":
+        return tools
+    return [types.Tool(function_declarations=[d for d in tools[0].function_declarations if d.name in BASIC_TOOLS])]
+
+
 def call_model(client, text: str, config) -> tuple[object, float]:
     """和正式環境一樣：5xx 重試（這裡最多 2 次）、429 等一分鐘再試"""
     global SERVER_ERRORS
@@ -163,16 +176,19 @@ def main():
     now = datetime.now(TZ)
     config = types.GenerateContentConfig(
         system_instruction=build_system_instruction(now),
-        tools=gemini_tools(),
+        tools=selected_tools(),
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         temperature=0.2,
     )
-    cases = build_cases(now)
-    print(f"模型：{MODEL}　現在時間：{now:%Y-%m-%d %H:%M}（星期{WEEKDAYS[now.weekday()]}）　共 {len(cases)} 句\n")
+    selected = {int(arg) for arg in sys.argv[1:] if arg.isdigit()}
+    cases = [(i, case) for i, case in enumerate(build_cases(now), start=1) if not selected or i in selected]
+    tool_names = [d.name for d in selected_tools()[0].function_declarations]
+    print(f"模型：{MODEL}　現在時間：{now:%Y-%m-%d %H:%M}（星期{WEEKDAYS[now.weekday()]}）　共 {len(cases)} 句")
+    print(f"工具（{len(tool_names)} 個）：{', '.join(tool_names)}\n")
 
     tool_ok = args_ok = 0
     latencies = []
-    for index, (text, expected_tool, checks) in enumerate(cases, start=1):
+    for index, (text, expected_tool, checks) in cases:
         if index > 1:
             time.sleep(REQUEST_INTERVAL_SECONDS)
         try:

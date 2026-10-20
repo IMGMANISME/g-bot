@@ -64,13 +64,19 @@ INTERVAL_SUGGESTIONS = (60, 120, 180)
         "type": "OBJECT",
         "properties": {
             "content": {"type": "STRING", "description": "提醒內容，例如 開會、吃藥、喝水"},
-            "datetime": {"type": "STRING", "description": "提醒時間，格式 YYYY-MM-DD HH:MM（台北時間）。週期提醒留空"},
-            "repeat_daily": {"type": "BOOLEAN", "description": "是否每天在同一個時間提醒"},
+            "datetime": {
+                "type": "STRING",
+                "description": "提醒時間，格式 YYYY-MM-DD HH:MM（台北時間）。一次性提醒與每天固定時間的提醒都填這裡；週期提醒留空",
+            },
+            "repeat_daily": {"type": "BOOLEAN", "description": "是否每天在同一個時間提醒（時間填在 datetime）"},
             "interval_minutes": {
                 "type": "INTEGER",
                 "description": "週期提醒：每隔幾分鐘提醒一次，例如每 2 小時填 120。只提醒一次或每天固定時間時留空",
             },
-            "window_start": {"type": "STRING", "description": "週期提醒每天開始的時間 HH:MM；使用者沒說就留空"},
+            "window_start": {
+                "type": "STRING",
+                "description": "只用於週期提醒（有 interval_minutes）：每天開始提醒的時間 HH:MM；使用者沒說就留空",
+            },
             "window_end": {
                 "type": "STRING",
                 "description": "週期提醒每天結束的時間 HH:MM；使用者沒說就留空。使用者說整天都要提醒時，開始和結束都填 00:00",
@@ -113,10 +119,16 @@ def create_reminder(args: dict, ctx: ToolContext) -> ToolResult:
             )
         return propose_recurring(content, interval, args, ctx)
 
-    if not args.get("datetime"):
+    datetime_text = args.get("datetime")
+    window_start = parse_clock(args.get("window_start"))
+    if not datetime_text and window_start:
+        # 模型有時把每天固定時間誤填在時段欄位（每天晚上十點 → window_start 22:00）
+        datetime_text = f"{ctx.now:%Y-%m-%d} {window_start:%H:%M}"
+        args = {**args, "repeat_daily": True}
+    if not datetime_text:
         return _ask(f"要在什麼時候提醒你「{content}」呢？", "缺少提醒時間", _when_buttons(content, prefix))
     try:
-        run_at = TAIPEI.localize(datetime.strptime(str(args["datetime"]), "%Y-%m-%d %H:%M"))
+        run_at = TAIPEI.localize(datetime.strptime(str(datetime_text), "%Y-%m-%d %H:%M"))
     except ValueError:
         return _ask(f"要在什麼時候提醒你「{content}」呢？", "看不懂提醒時間", _when_buttons(content, prefix))
 

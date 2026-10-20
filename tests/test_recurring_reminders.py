@@ -139,3 +139,14 @@ def test_invalid_interval_asks_again(env, now, interval):
 
 def test_unknown_button_action(now):
     assert "失效" in run_action("no_such_action:1", ctx(now)).fallback_text
+
+
+def test_daily_time_mistakenly_given_as_window_start(env, now):
+    """Gemma 實測：「每天晚上十點提醒我吃藥」被填成 window_start/window_end 22:00、沒有 datetime"""
+    result = execute_tool(
+        "create_reminder",
+        {"content": "吃藥", "window_start": "22:00", "window_end": "22:00", "repeat_daily": True},
+        ctx(now),
+    )
+    assert result.data == {"status": "created", "when": "每天 22:00", "content": "吃藥", "repeat_daily": True}
+    assert env["saved"][0].repeat_daily and not env["saved"][0].is_recurring
