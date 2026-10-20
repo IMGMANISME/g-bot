@@ -80,7 +80,7 @@ flowchart TB
 在群組中以群組 ID 保存共同記憶，並將每則訊息記錄為 `使用者名稱：訊息內容`，讓 LLM 讀取歷史時能正確區分發言者，避免多人對話被混為一談。
  
 **可抽換的 Prompt Profile**
-`SYSTEM_PROMPT_PROFILE` 環境變數指向 `app/prompts/<profile>/`，內含 `conversation.txt`（對話人格）與 `realtime.txt`（即時查詢回答規則）。新增一個資料夾即可衍生出用途完全不同的 bot，不需修改任何程式碼。
+`SYSTEM_PROMPT_PROFILE` 環境變數指向 `app/prompts/<profile>/`，內含 `conversation.txt`（對話人格）。新增一個資料夾即可衍生出用途完全不同的 bot，不需修改任何程式碼。
  
 **服務可觀測性**
 `/health` 檢查服務與資料庫連線狀態；`/metrics` 提供效能指標，並以 `METRICS_TOKEN` 保護，未設定時回傳 404。
@@ -139,11 +139,10 @@ System prompt 放在 `app/prompts/<profile>/`，預設 profile 是 `gbot`。
  
 ```
 app/prompts/gbot/
-├── conversation.txt   # 一般對話人格與限制
-└── realtime.txt       # 即時查詢回答規則
+└── conversation.txt   # 一般對話人格與限制
 ```
  
-如果要開發另一個 bot，可以新增一個資料夾，例如 `app/prompts/support_bot/`，放入同名的 `conversation.txt` 與 `realtime.txt`，再設定：
+如果要開發另一個 bot，可以新增一個資料夾，例如 `app/prompts/support_bot/`，放入同名的 `conversation.txt`，再設定：
  
 ```
 SYSTEM_PROMPT_PROFILE=support_bot

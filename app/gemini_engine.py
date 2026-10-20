@@ -228,7 +228,9 @@ def query_gemini(messages: list) -> str:
         )
 
         if not getattr(response, "text", None):
-            logger.warning("Gemma/Gemini API 沒有回應內容")
+            candidates = getattr(response, "candidates", None) or []
+            finish_reason = getattr(candidates[0], "finish_reason", None) if candidates else None
+            logger.warning(f"Gemma/Gemini API 沒有回應內容，finish_reason: {finish_reason}")
             return "⚠️ Gemini 沒有回應內容，請稍後再試。"
 
         result = _extract_final_reply(response.text)

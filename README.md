@@ -80,7 +80,7 @@ flowchart TB
 In group chats, shared memory is keyed by group ID, and every message is stored as `username: message`. This lets the LLM attribute statements to the right speaker instead of blending several people's messages into one voice.
  
 **Swappable prompt profiles**
-The `SYSTEM_PROMPT_PROFILE` environment variable points to `app/prompts/<profile>/`, which holds `conversation.txt` (persona and constraints) and `realtime.txt` (rules for answering lookups). Adding a directory produces a completely different bot — no code changes required.
+The `SYSTEM_PROMPT_PROFILE` environment variable points to `app/prompts/<profile>/`, which holds `conversation.txt` (persona and constraints). Adding a directory produces a completely different bot — no code changes required.
  
 **Service observability**
 `/health` verifies service and database connectivity. `/metrics` reports performance indicators and is protected by `METRICS_TOKEN`; when the token is unset, the endpoint returns 404 rather than leaking data.
@@ -139,11 +139,10 @@ System prompts live in `app/prompts/<profile>/`. The default profile is `gbot`.
  
 ```
 app/prompts/gbot/
-├── conversation.txt   # General persona and constraints
-└── realtime.txt       # Rules for answering real-time lookups
+└── conversation.txt   # General persona and constraints
 ```
  
-To build a different bot, add a directory such as `app/prompts/support_bot/` containing the same two files, then set:
+To build a different bot, add a directory such as `app/prompts/support_bot/` containing the same `conversation.txt`, then set:
  
 ```
 SYSTEM_PROMPT_PROFILE=support_bot
