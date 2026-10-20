@@ -244,3 +244,44 @@ def test_reminder_list_shows_recurrence(bot, monkeypatch):
     ])
     reply = bot["send"](text_event(USER, "我的提醒"))
     assert "• 編號 7｜每 2 小時（09:00–21:00），下一次今天" in reply.text
+
+
+@pytest.fixture
+def assistant_reply(bot, monkeypatch):
+    from app.services.assistant_service import AssistantReply
+    monkeypatch.setattr(message_event, "get_assistant_reply", lambda **kwargs: AssistantReply("台北今天晴天"))
+    monkeypatch.setattr(message_event, "show_loading_animation", lambda chat_id: None)
+    monkeypatch.setattr(message_event, "get_or_fetch_user_name", lambda event, sid: "小明")
+    monkeypatch.setattr(message_event, "format_user_message_for_memory", lambda event, sid, text: text)
+    return bot
+
+
+def test_due_reminder_is_attached_to_reply_as_separate_bubble(assistant_reply, monkeypatch):
+    from datetime import time
+    from app.repositories.notification_repository import NotificationRecord
+    from app.utils.time_utils import now_taipei
+    water = NotificationRecord(1, "U1", "喝水", False, now_taipei(), 180, time(0), time(0))
+    nudged = []
+    monkeypatch.setattr(message_event, "due_nudges", lambda chat_id, now: [water] if chat_id == "U1" else [])
+    monkeypatch.setattr(message_event, "mark_nudged", lambda record, now: nudged.append(record.id))
+
+    assistant_reply["send"](text_event(USER, "台北天氣"))
+    first, second = assistant_reply["replies"]
+    assert first.text == "台北今天晴天"
+    assert second.text == "⏰ 順便提醒你：喝水"
+    assert [b.action.label for b in second.quick_reply.items] == ["喝了 ✅", "30 分鐘後再提醒", "今天不用了"]
+    assert nudged == [1]  # 回覆成功後才延後下一次推播
+
+
+def test_no_nudge_bubble_when_nothing_is_due(assistant_reply, monkeypatch):
+    monkeypatch.setattr(message_event, "due_nudges", lambda chat_id, now: [])
+    assistant_reply["send"](text_event(USER, "台北天氣"))
+    assert [m.text for m in assistant_reply["replies"]] == ["台北今天晴天"]
+
+
+def test_nudge_lookup_failure_does_not_break_reply(assistant_reply, monkeypatch):
+    def broken(chat_id, now):
+        raise RuntimeError("db down")
+    monkeypatch.setattr(message_event, "due_nudges", broken)
+    assistant_reply["send"](text_event(USER, "台北天氣"))
+    assert [m.text for m in assistant_reply["replies"]] == ["台北今天晴天"]

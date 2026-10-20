@@ -13,6 +13,7 @@ from app.repositories.notification_repository import get_user_notifications
 from app.handlers.command_handler import command_processor
 from app.services.assistant_service import get_assistant_reply
 from app.tools.base import QuickReplyItem
+from app.tools.reminders import due_nudges, mark_nudged, reminder_buttons
 from app.views.line_menus import build_quick_intro_message, build_quick_help_message, build_reply_message, mention_prefix
 
 logger = setup_logger("message_event")
@@ -62,7 +63,29 @@ def handle_assistant_message(event, sender_id: str, chat_id: str, memory_id: str
         is_multi_user_chat=is_multi_user_chat(event),
         mention_prefix=prefix,
     )
-    safe_reply_message(event, build_reply_message(reply.text, reply.quick_replies))
+
+    nudges = _due_nudges(chat_id)
+    nudge_messages = [
+        build_reply_message(f"⏰ 順便提醒你：{record.message}", reminder_buttons(record))
+        for record in nudges
+    ]
+    if safe_reply_message(event, build_reply_message(reply.text, reply.quick_replies), *nudge_messages):
+        now = now_taipei()
+        for record in nudges:
+            mark_nudged(record, now)
+
+
+# 一次回覆最多 5 則訊息，主要回覆佔 1 則
+MAX_NUDGES_PER_REPLY = 4
+
+
+def _due_nudges(chat_id: str) -> list:
+    """一對一聊天時，該順便提醒的週期提醒（回覆不花推播額度）；查詢失敗不影響正常回覆"""
+    try:
+        return due_nudges(chat_id, now_taipei())[:MAX_NUDGES_PER_REPLY]
+    except Exception as e:
+        logger.warning(f"查詢順便提醒失敗: {e}")
+        return []
 
 @handle_exceptions("⚠️ 特殊回覆處理失敗")
 def handle_special_reply(event, special_type: str, sender_id: str):

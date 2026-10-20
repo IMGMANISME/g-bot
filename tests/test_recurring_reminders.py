@@ -11,16 +11,16 @@ from tests.conftest import taipei
 @pytest.fixture
 def env(monkeypatch):
     """假的資料庫、聊天室人數與推播額度"""
-    state = {"saved": [], "members": 1, "quota": {"type": "limited", "limit": 200, "used": 20}}
+    state = {"saved": [], "quota": {"type": "limited", "limit": 200, "used": 20}}
 
-    def fake_add(chat_id, message, run_at, repeat_daily, interval_minutes=None, window=None):
+    def fake_add(chat_id, message, run_at, repeat_daily, interval_minutes=None, window=None, nudge_interval_minutes=None):
         record = NotificationRecord(len(state["saved"]) + 1, chat_id, message, repeat_daily, run_at, interval_minutes,
-                                    window.start if window else None, window.end if window else None)
+                                    window.start if window else None, window.end if window else None,
+                                    nudge_interval_minutes=nudge_interval_minutes)
         state["saved"].append(record)
         return record
 
     monkeypatch.setattr(reminders, "add_scheduled_notification", fake_add)
-    monkeypatch.setattr(reminders, "get_chat_member_count", lambda chat_id: state["members"])
     monkeypatch.setattr(reminders, "get_message_quota", lambda: state["quota"])
     return state
 
@@ -45,6 +45,7 @@ def test_recurring_reminder_asks_before_creating(env, now):
     assert "內容：喝水" in card
     assert "頻率：每 2 小時（09:00–21:00），時段是我先幫你選的" in card
     assert "一天約 7 次，第一次是今天 16:30" in card
+    assert "有跟我聊天時，最多每 40 分鐘順便提醒一次（不花推播額度）" in card
     assert "每月大約會用掉 210 則推播，G-Bot 每月推播上限 200 則（本月已用 20 則）" in card
     assert "⚠️ 照這個頻率，本月推播額度可能不夠" in card
     assert [item.label for item in result.quick_replies] == ["確定建立", "改成每 1 小時", "改成每 3 小時", "取消"]
@@ -64,13 +65,30 @@ def test_all_day(env, now):
     assert "每 3 小時（整天）" in result.attachment and "一天約 8 次" in result.attachment
 
 
-def test_group_usage_counts_members(env, now):
-    env["members"] = 5
+@pytest.mark.parametrize("chat_id", ["C_group", "R_room"])
+def test_recurring_reminders_are_not_allowed_in_groups(env, now, chat_id):
+    result = propose(now, chat_id=chat_id, interval_minutes=120)
+    assert result.data["status"] == "not_allowed_in_group"
+    assert "只能在私訊設定" in result.fallback_text
+    assert env["saved"] == []
+
+
+def test_one_time_reminder_is_still_allowed_in_groups(env, now):
+    result = execute_tool("create_reminder", {"content": "開會", "datetime": "2026-10-21 08:00"}, ctx(now, "C_group"))
+    assert result.data["status"] == "created"
+
+
+def test_unlimited_quota(env, now):
     env["quota"] = {"type": "none"}
-    result = propose(now, chat_id="C_group", interval_minutes=120)
-    assert "這裡有 5 人，每次提醒會算 5 則推播額度" in result.attachment
-    assert "每月大約會用掉 1050 則推播" in result.attachment
-    assert "⚠️" not in result.attachment
+    result = propose(now, interval_minutes=180)
+    assert "每月大約會用掉 150 則推播" in result.attachment and "⚠️" not in result.attachment
+
+
+def test_custom_nudge_interval(env, now):
+    data = button(propose(now, interval_minutes=180, nudge_interval_minutes=30), "確定建立").data
+    assert "最多每 30 分鐘順便提醒一次" in propose(now, interval_minutes=180, nudge_interval_minutes=30).attachment
+    run_action(data, ctx(now))
+    assert env["saved"][0].nudge_interval_minutes == 30
 
 
 def test_confirm_creates_reminder_once(env, now):

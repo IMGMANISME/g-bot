@@ -104,3 +104,28 @@ def test_message_quota_failure_is_reported(monkeypatch):
 
     monkeypatch.setattr(line_utils, "messaging_api", BrokenApi())
     assert "error" in line_utils.get_message_quota()
+
+
+def test_reply_multiple_messages_quotes_only_the_first(monkeypatch):
+    from types import SimpleNamespace
+    sent = []
+
+    class ReplyApi:
+        def reply_message(self, request):
+            sent.extend(request.messages)
+
+    monkeypatch.setattr(line_utils, "messaging_api", ReplyApi())
+    event = SimpleNamespace(
+        reply_token="rt",
+        source=SimpleNamespace(type="group", group_id="C1", user_id="U1"),
+        message=SimpleNamespace(quote_token="q"),
+    )
+    assert line_utils.safe_reply_message(event, TextMessage(text="回答"), TextMessage(text="順便提醒"))
+    assert [(m.text, m.quote_token) for m in sent] == [("回答", "q"), ("順便提醒", None)]
+
+
+def test_push_accepts_message_with_buttons(monkeypatch):
+    api = FakeApi()
+    monkeypatch.setattr(line_utils, "messaging_api", api)
+    line_utils.push_line_message_to_users(TextMessage(text="⏰ 提醒你：喝水"), ["U1"], retry_key_base="reminder:1")
+    assert api.pushes[0][1] == ["⏰ 提醒你：喝水"] and api.pushes[0][2]

@@ -62,22 +62,23 @@ def push_message(to: str, *messages, retry_key: str | None = None) -> PushResult
 
 
 def push_line_message_to_users(
-    message: str,
+    message: str | TextMessage,
     user_ids: list[str],
     image_url: str | None = None,
     retry_key_base: str | None = None,
 ) -> PushResult:
-    """推播文字（可附圖片）給多個聊天室；回傳最差的結果。
+    """推播文字（可附圖片、可傳入已附按鈕的 TextMessage）給多個聊天室；回傳最差的結果。
 
     retry_key_base 會和每個收件者組成各自的 retry key，同一則推播重試時不會重複發送。
     """
-    messages = [TextMessage(text=message)]
+    text_message = message if isinstance(message, TextMessage) else TextMessage(text=message)
+    messages = [text_message]
     if image_url:
         messages.append(ImageMessage(original_content_url=image_url, preview_image_url=image_url))
 
     results = []
     for uid in user_ids:
-        retry_key = make_retry_key(retry_key_base, uid, message) if retry_key_base else None
+        retry_key = make_retry_key(retry_key_base, uid, text_message.text) if retry_key_base else None
         result = push_message(uid, *messages, retry_key=retry_key)
         if result is PushResult.SENT:
             logger.info(f"成功推送訊息給: {uid}")
@@ -154,15 +155,16 @@ def safe_reply(event, message: str):
     return safe_reply_message(event, TextMessage(text=message))
 
 
-def safe_reply_message(event, send_message) -> bool:
-    send_message = _quote_in_group(event, send_message)
+def safe_reply_message(event, send_message, *more_messages) -> bool:
+    """回覆一則或多則訊息（LINE 一次最多 5 則）；群組裡只有第一則引用對方的訊息"""
+    messages = [_quote_in_group(event, send_message), *more_messages][:5]
     try:
-        reply_message(event.reply_token, send_message)
+        reply_message(event.reply_token, *messages)
         logger.debug(f"成功回覆訊息給 {get_sender_id(event)}")
         return True
     except Exception as e:
         logger.warning(f"reply_message 失敗，改用推播: {e}")
-        result = push_message(get_chat_id(event), send_message)
+        result = push_message(get_chat_id(event), *messages)
         if result is PushResult.SENT:
             logger.info(f"reply fallback push_message 成功 - chat_id: {get_chat_id(event)}")
             return True
@@ -221,16 +223,3 @@ def get_message_quota() -> dict:
     except Exception as e:
         logger.warning(f"無法取得訊息額度: {e}")
         return {"error": str(e)}
-
-
-def get_chat_member_count(chat_id: str) -> int | None:
-    """聊天室人數：一對一為 1，群組／聊天室向 LINE 查詢；查不到回傳 None。"""
-    try:
-        if chat_id.startswith("C"):
-            return messaging_api.get_group_member_count(chat_id).count
-        if chat_id.startswith("R"):
-            return messaging_api.get_room_member_count(chat_id).count
-        return 1
-    except Exception as e:
-        logger.warning(f"無法取得聊天室人數: {e}")
-        return None

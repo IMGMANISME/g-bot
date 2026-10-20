@@ -182,3 +182,19 @@ def test_recurring_reminder_roundtrip(db, now):
     assert loaded.id == created.id and loaded.is_recurring
     assert (loaded.interval_minutes, loaded.window) == (120, Window(time(22), time(2)))
     assert loaded.last_done_at is None
+
+
+def test_record_reminded_and_recurring_lookup(db, now):
+    from datetime import time
+    from app.repositories import notification_repository as repo
+    from app.services.reminder_schedule import Window
+
+    water = repo.add_scheduled_notification("U1", "喝水", now + timedelta(hours=3), False, 180, Window(time(9), time(21)), 45)
+    repo.add_scheduled_notification("U1", "開會", now + timedelta(hours=1), False)
+    assert [r.message for r in repo.get_recurring_notifications("U1")] == ["喝水"]
+    assert repo.get_notification(water.id).nudge_interval_minutes == 45
+
+    repo.record_reminded(water.id, now, now + timedelta(hours=3), done=True)
+    loaded = repo.get_notification(water.id)
+    assert loaded.last_reminded_at == now and loaded.last_done_at == now
+    assert repo.get_notification(999999) is None

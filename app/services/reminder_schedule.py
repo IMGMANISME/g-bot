@@ -86,3 +86,38 @@ def parse_clock(value) -> time | None:
         return time(int(hour), int(minute))
     except (ValueError, AttributeError):
         return None
+
+
+def default_nudge_interval(interval_minutes: int) -> int:
+    """順便提醒的間隔：預設是推播間隔的 1/3（每 3 小時推播 → 有聊天時每 1 小時順便提醒）"""
+    return max(1, interval_minutes // 3)
+
+
+def is_nudge_due(
+    interval_minutes: int,
+    nudge_interval_minutes: int | None,
+    window: Window | None,
+    next_run_at: datetime,
+    last_reminded_at: datetime | None,
+    now: datetime,
+) -> bool:
+    """使用者傳訊息時，是否該順便提醒：在時段內，且距離上次提醒已超過順便提醒的間隔"""
+    if window is not None and not window.contains(now):
+        return False
+    # 還沒提醒過時，以「上一個排定時間」當作上次提醒
+    last = to_taipei(last_reminded_at) if last_reminded_at else to_taipei(next_run_at) - timedelta(minutes=interval_minutes)
+    nudge = nudge_interval_minutes or default_nudge_interval(interval_minutes)
+    return to_taipei(now) - last >= timedelta(minutes=nudge)
+
+
+def skip_today_run(interval_minutes: int, window: Window | None, now: datetime) -> datetime:
+    """「今天不用了」：跳到下一個時段開始；沒有時段的話明天同一時間"""
+    now = to_taipei(now)
+    if window is None:
+        return now + timedelta(days=1)
+    if window.contains(now):
+        # 目前在時段內：這個時段剩下的都不提醒，等下一次時段開始
+        return window.next_start_after(now + timedelta(minutes=1))
+    next_start = window.next_start_after(now)
+    # 今天的時段還沒開始：今天的也跳過
+    return next_start + timedelta(days=1) if next_start.date() == now.date() else next_start

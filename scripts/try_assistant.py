@@ -56,7 +56,6 @@ def fake_add_notification(sender_id, message, run_at, repeat_daily, interval_min
 
 
 reminder_tools.add_scheduled_notification = fake_add_notification
-reminder_tools.get_chat_member_count = lambda chat_id: 1
 reminder_tools.get_message_quota = lambda: {"type": "limited", "limit": 200, "used": 20}
 
 # --- 假的天氣資料：明天下雨、週五偏冷 ---

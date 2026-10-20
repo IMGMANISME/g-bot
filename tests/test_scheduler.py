@@ -14,10 +14,12 @@ def record(id_, message, next_run_at, repeat_daily=False):
 @pytest.fixture
 def store(monkeypatch, now):
     """記憶體中的提醒資料表，並記錄推送"""
-    state = {"rows": {}, "pushed": [], "keys": [], "fail": {}}
+    state = {"rows": {}, "pushed": [], "buttons": [], "keys": [], "fail": {}}
 
     def push(message, user_ids, image_url=None, retry_key_base=None):
+        message, items = message.text, (message.quick_reply.items if message.quick_reply else [])
         state["pushed"].append(message)
+        state["buttons"].append([item.action.label for item in items])
         state["keys"].append(retry_key_base)
         for tag, result in state["fail"].items():
             if tag in message:
@@ -34,6 +36,15 @@ def store(monkeypatch, now):
     monkeypatch.setattr(scheduler, "get_due_notifications",
                         lambda t: sorted((r for r in state["rows"].values() if r.next_run_at <= t), key=lambda r: r.next_run_at))
     monkeypatch.setattr(scheduler, "reschedule_notification", reschedule)
+
+    def record_reminded(id_, reminded_at, next_run_at, done=False):
+        reschedule(id_, next_run_at)
+        old = state["rows"][id_]
+        state["rows"][id_] = NotificationRecord(old.id, old.sender_id, old.message, old.repeat_daily, old.next_run_at,
+                                                old.interval_minutes, old.window_start, old.window_end,
+                                                last_reminded_at=reminded_at)
+
+    monkeypatch.setattr(scheduler, "record_reminded", record_reminded)
     monkeypatch.setattr(scheduler, "delete_notification", lambda id_: state["rows"].pop(id_))
 
     def add(r):
@@ -121,3 +132,12 @@ def test_last_recurring_reminder_of_the_day_moves_to_tomorrow(store, now):
     store["add"](NotificationRecord(1, "U1", "喝水", False, now - timedelta(seconds=30), 120, time(9), time(14, 30)))
     scheduler.check_and_send_notifications()
     assert store["rows"][1].next_run_at == now.replace(hour=9, minute=0) + timedelta(days=1)
+
+
+def test_push_buttons_by_reminder_type(store, now):
+    from datetime import time
+    store["add"](record(1, "開會", now - timedelta(seconds=30)))
+    store["add"](NotificationRecord(2, "U1", "喝水", False, now - timedelta(seconds=20), 120, time(9), time(21)))
+    scheduler.check_and_send_notifications()
+    assert store["buttons"] == [["30 分鐘後再提醒"], ["喝了 ✅", "30 分鐘後再提醒", "今天不用了"]]
+    assert store["rows"][2].last_reminded_at == now

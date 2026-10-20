@@ -6,12 +6,15 @@ from app.repositories.notification_repository import (
     NotificationRecord,
     delete_notification,
     get_due_notifications,
+    record_reminded,
     reschedule_notification,
 )
 from app.repositories.system_state_repository import try_acquire_job_lock
 from app.utils.line_utils import PushResult, push_line_message_to_users
 from app.utils.logger import setup_logger
 from app.services.reminder_schedule import next_interval_run
+from app.tools.reminders import reminder_buttons
+from app.views.line_menus import build_reply_message
 from app.utils.time_utils import ONE_DAY, TAIPEI, advance_daily, format_run_at, now_taipei
 
 logger = setup_logger("scheduler")
@@ -60,7 +63,7 @@ def check_and_send_notifications():
             due_at = _latest_due_time(task, now)
             # 同一次提醒重試時用同一個 retry key，就算上次其實已送達，LINE 也不會重複發送
             result = push_line_message_to_users(
-                build_reminder_text(task, now),
+                build_reply_message(build_reminder_text(task, now), reminder_buttons(task)),
                 [task.sender_id],
                 retry_key_base=f"reminder:{task.id}:{due_at.isoformat()}",
             )
@@ -73,7 +76,7 @@ def check_and_send_notifications():
                 logger.error(f"提醒 {task.id} 無法送達（可能已被封鎖），不再重試這一次")
 
             if task.is_recurring:
-                reschedule_notification(task.id, next_interval_run(task.next_run_at, task.interval_minutes, task.window, now))
+                record_reminded(task.id, now, next_interval_run(task.next_run_at, task.interval_minutes, task.window, now))
             elif task.repeat_daily:
                 reschedule_notification(task.id, advance_daily(task.next_run_at, now))
             else:
