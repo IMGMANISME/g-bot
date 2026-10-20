@@ -65,6 +65,8 @@ def check_fields(**expected):
                 ok = want in str(got or "")
             elif key in ("window_start", "window_end"):
                 ok = parse_clock(got) == parse_clock(want)  # 9:00 與 09:00 視為相同
+            elif key == "repeat_daily":
+                ok = bool(got) == want  # 沒填視為不重複，程式也是這樣處理
             elif key == "interval_minutes" and got is not None:
                 ok = want is not None and int(got) == want
             else:
@@ -119,14 +121,26 @@ def build_cases(now: datetime) -> list[tuple[str, str | None, list]]:
     ]
 
 
+SERVER_ERRORS = 0  # 遇到幾次 Google 端的 5xx（重試前也算）
+
+
 def call_model(client, text: str, config) -> tuple[object, float]:
-    for attempt in range(2):
+    """和正式環境一樣：5xx 重試（這裡最多 2 次）、429 等一分鐘再試"""
+    global SERVER_ERRORS
+    for attempt in range(3):
         start = time.monotonic()
         try:
             response = client.models.generate_content(model=MODEL, contents=text, config=config)
             return response, time.monotonic() - start
+        except errors.ServerError as e:
+            SERVER_ERRORS += 1
+            if attempt < 2:
+                print(f"  遇到 {e.code}（Google 伺服器錯誤），{3 * (attempt + 1)} 秒後重試…")
+                time.sleep(3 * (attempt + 1))
+                continue
+            raise
         except errors.ClientError as e:
-            if e.code == 429 and attempt == 0:
+            if e.code == 429 and attempt < 2:
                 print("  遇到 429（每分鐘上限），等 60 秒後重試…")
                 time.sleep(60)
                 continue
@@ -183,6 +197,7 @@ def main():
 
     total = len(cases)
     print("=" * 50)
+    print(f"Google 伺服器錯誤（5xx）：{SERVER_ERRORS} 次（已自動重試）")
     print(f"工具選擇正確：{tool_ok}/{total}")
     print(f"工具與參數都正確：{args_ok}/{total}")
     if latencies:
