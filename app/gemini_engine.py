@@ -1,11 +1,11 @@
 #app/gemini_engine.py
 import re
+from dataclasses import dataclass
 from google import genai
 from google.genai import errors, types
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 from app.config import config
 from app.utils.logger import setup_logger
-from app.utils.decorators import handle_exceptions
 
 logger = setup_logger("gemini_engine")
 
@@ -153,107 +153,174 @@ def _extract_final_reply(raw_text: str) -> str:
 # 金鑰無效、停權或沒有權限時，重試也不會成功
 _AUTH_ERROR_CODES = (401, 403)
 AUTH_ERROR_REPLY = "⚠️ 我的 AI 服務暫時無法使用，請稍後再試或聯絡管理員。"
+QUOTA_ERROR_REPLY = "⚠️ 我今天講太多話了，AI 額度暫時用完，請稍後再試。"
+GENERIC_ERROR_REPLY = "⚠️ 我現在有點忙不過來，請等一下再問我一次。"
+
+PLAN_TIMEOUT_SECONDS = 45  # 判斷要聊天還是用工具
+REWRITE_TIMEOUT_SECONDS = 25  # 把工具結果改寫成口語，超過就改用模板
+MAX_HISTORY_MESSAGES = 10
+
+
+class GeminiUnavailable(Exception):
+    """模型呼叫失敗；reply 可以直接回覆給使用者。"""
+
+    def __init__(self, reply: str):
+        super().__init__(reply)
+        self.reply = reply
+
+
+@dataclass
+class ModelTurn:
+    """模型這一輪的回覆：一般文字，或要求呼叫工具。"""
+    text: str | None = None
+    function_call: types.FunctionCall | None = None
+    content: types.Content | None = None  # 模型原始回覆，送回工具結果時要一起附上
 
 
 def _is_auth_error(e: Exception) -> bool:
     return isinstance(e, errors.ClientError) and getattr(e, "code", None) in _AUTH_ERROR_CODES
 
 
+def _is_retryable(e: BaseException) -> bool:
+    """只重試伺服器錯誤與每分鐘上限；金鑰、額度、參數錯誤重試也沒用。"""
+    if isinstance(e, errors.ServerError):
+        return True
+    return isinstance(e, errors.ClientError) and getattr(e, "code", None) == 429
+
+
+def _to_unavailable(e: Exception) -> GeminiUnavailable:
+    code = getattr(e, "code", None)
+    if _is_auth_error(e):
+        logger.error(f"Gemma/Gemini API 認證失敗 ({code} {getattr(e, 'status', '')})，請檢查 GEMINI_API_KEY 是否有效或已被停權")
+        return GeminiUnavailable(AUTH_ERROR_REPLY)
+    if code in (402, 429):
+        logger.error(f"Gemma/Gemini API 額度不足或超過上限: {e}")
+        return GeminiUnavailable(QUOTA_ERROR_REPLY)
+    logger.error(f"Gemma/Gemini API 發生錯誤: {e}")
+    return GeminiUnavailable(GENERIC_ERROR_REPLY)
+
+
 # === 初始化 Gemma/Gemini API Client ===
 genai_client = genai.Client(api_key=config.GEMINI_API_KEY)
 
+
 def _format_messages_for_gemini(messages: list) -> list:
-    """將訊息格式化為 Google Gen AI SDK 要求的 Content 格式。"""
-    formatted = []
-    for m in messages:
+    """將 user/assistant 訊息轉成 Content；連續同角色的訊息合併成一則。"""
+    formatted: list[types.Content] = []
+    for m in messages[-MAX_HISTORY_MESSAGES:]:
+        if m["role"] not in ("user", "assistant") or not m.get("content"):
+            continue
         role = "model" if m["role"] == "assistant" else "user"
-        formatted.append(types.Content(
-            role=role,
-            parts=[types.Part.from_text(text=m["content"])]
-        ))
+        if formatted and formatted[-1].role == role:
+            formatted[-1].parts.append(types.Part.from_text(text=m["content"]))
+        else:
+            formatted.append(types.Content(role=role, parts=[types.Part.from_text(text=m["content"])]))
     return formatted
 
 
-def _build_generation_config(system_instruction: str | None) -> types.GenerateContentConfig:
+def _build_generation_config(
+    system_instruction: str | None,
+    tools: list[types.Tool] | None = None,
+    timeout_seconds: int | None = None,
+) -> types.GenerateContentConfig:
     return types.GenerateContentConfig(
         system_instruction=system_instruction,
         temperature=config.GEMINI_TEMPERATURE,
         top_p=1,
         top_k=40,
         max_output_tokens=config.GEMINI_MAX_TOKENS,
-        response_mime_type="text/plain",
+        tools=tools,
+        # 工具由我們自己執行，不讓 SDK 自動呼叫
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True) if tools else None,
+        http_options=types.HttpOptions(timeout=timeout_seconds * 1000) if timeout_seconds else None,
     )
 
-@handle_exceptions("我現在懶得回答你，請等一下再試😉", log_error=True)
+
 @retry(
-    stop=stop_after_attempt(3), 
-    wait=wait_exponential(multiplier=1, min=2, max=10),
-    reraise=True
+    retry=retry_if_exception(_is_retryable),
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=1, min=2, max=6),
+    reraise=True,
 )
-def query_gemini(messages: list) -> str:
-    """查詢 Gemma/Gemini API 模型。"""
-    if not messages:
-        logger.warning("收到空的訊息列表")
-        return "⚠️ 沒有訊息內容"
-    
-    # 1. 提取系統指令 (System Instruction)
-    system_parts = []
-    other_messages = []
-    for m in messages:
-        if m["role"] == "system":
-            system_parts.append(m["content"])
-        else:
-            other_messages.append(m)
-    
-    system_instruction = "\n".join(system_parts) if system_parts else None
+def _generate(contents: list[types.Content], generation_config: types.GenerateContentConfig):
+    return genai_client.models.generate_content(
+        model=config.GEMINI_MODEL,
+        contents=contents,
+        config=generation_config,
+    )
 
-    # 2. 處理摘要邏輯（如果對話過長）
-    max_history_len = 10  # 超過 10 則訊息考慮摘要
-    if len(other_messages) > max_history_len:
-        logger.info(f"對話紀錄過長 ({len(other_messages)}), 考慮執行摘要...")
-        # 這裡保留原有的摘要邏輯概念，但改進實作
-        # 暫時簡化：只取最後 10 則訊息
-        other_messages = other_messages[-10:]
 
-    # 3. 格式化剩餘訊息。Gemma 4 官方文件建議用 system_instruction 控制行為，
-    # 不使用自訂 <reply> 標籤或 Gemini structured output。
-    formatted_messages = _format_messages_for_gemini(other_messages)
-    generation_config = _build_generation_config(system_instruction)
-    
+def _clean_text(response) -> str | None:
+    """取出模型的文字回覆並清掉推理殘留；不適合直接送出時回傳 None。"""
+    raw_text = getattr(response, "text", None)
+    if not raw_text:
+        candidates = getattr(response, "candidates", None) or []
+        finish_reason = getattr(candidates[0], "finish_reason", None) if candidates else None
+        logger.warning(f"Gemma/Gemini API 沒有回應內容，finish_reason: {finish_reason}")
+        return None
+
+    result = _extract_final_reply(raw_text)
+    if not result:
+        logger.warning("Gemma/Gemini API 回覆抽取後為空")
+        return None
+    if _contains_meta_leak(result):
+        logger.warning("Gemma/Gemini API 回覆包含 meta leakage，拒絕送出")
+        return None
+    return result
+
+
+def plan_reply(system_instruction: str, messages: list, tools: list[types.Tool]) -> ModelTurn:
+    """讓模型決定直接回覆，或是呼叫哪個工具。失敗時丟出 GeminiUnavailable。"""
+    contents = _format_messages_for_gemini(messages)
+    if not contents:
+        raise GeminiUnavailable("⚠️ 沒有訊息內容")
+
     try:
-        response = genai_client.models.generate_content(
-            model=config.GEMINI_MODEL,
-            contents=formatted_messages,
-            config=generation_config,
-        )
-
-        if not getattr(response, "text", None):
-            candidates = getattr(response, "candidates", None) or []
-            finish_reason = getattr(candidates[0], "finish_reason", None) if candidates else None
-            logger.warning(f"Gemma/Gemini API 沒有回應內容，finish_reason: {finish_reason}")
-            return "⚠️ Gemini 沒有回應內容，請稍後再試。"
-
-        result = _extract_final_reply(response.text)
-        if not result:
-            logger.warning("Gemma/Gemini API 回覆抽取後為空")
-            return "我剛剛整理回覆時出錯了，請再問我一次。"
-
-        if _contains_meta_leak(result):
-            logger.warning("Gemma/Gemini API 回覆包含 meta leakage，拒絕送出")
-            return "我剛剛整理回覆時出錯了，請再問我一次。"
-
-        logger.info(f"Gemma/Gemini API 回覆處理成功，最終長度: {len(result)} 字元")
-        return result
-
+        response = _generate(contents, _build_generation_config(system_instruction, tools, PLAN_TIMEOUT_SECONDS))
     except Exception as e:
-        if _is_auth_error(e):
-            logger.error(
-                f"Gemma/Gemini API 認證失敗 ({e.code} {getattr(e, 'status', '')})，"
-                "請檢查 GEMINI_API_KEY 是否有效或已被停權"
-            )
-            return AUTH_ERROR_REPLY
-        logger.error(f"Gemma/Gemini API 發生錯誤: {e}")
-        raise
+        raise _to_unavailable(e)
+
+    function_calls = response.function_calls or []
+    if function_calls:
+        call = function_calls[0]
+        logger.info(f"模型要求呼叫工具: {call.name} {dict(call.args or {})}")
+        content = response.candidates[0].content if response.candidates else None
+        return ModelTurn(function_call=call, content=content)
+
+    text = _clean_text(response)
+    if not text:
+        raise GeminiUnavailable("我剛剛整理回覆時出錯了，請再問我一次。")
+    logger.info(f"Gemma/Gemini API 回覆處理成功，最終長度: {len(text)} 字元")
+    return ModelTurn(text=text)
+
+
+def reply_with_tool_result(
+    system_instruction: str,
+    messages: list,
+    tools: list[types.Tool],
+    function_call: types.FunctionCall,
+    result: dict,
+    model_content: types.Content | None = None,
+) -> str | None:
+    """把工具結果交給模型改寫成口語回覆；失敗或逾時回傳 None，由呼叫端改用模板。"""
+    contents = _format_messages_for_gemini(messages)
+    contents.append(model_content or types.Content(role="model", parts=[types.Part(function_call=function_call)]))
+    contents.append(types.Content(
+        role="user",
+        parts=[types.Part.from_function_response(name=function_call.name, response=result)],
+    ))
+
+    try:
+        response = _generate(contents, _build_generation_config(system_instruction, tools, REWRITE_TIMEOUT_SECONDS))
+    except Exception as e:
+        logger.warning(f"工具結果改寫失敗，改用模板回覆: {e}")
+        return None
+
+    if response.function_calls:
+        logger.warning("改寫時模型又要求呼叫工具，改用模板回覆")
+        return None
+    return _clean_text(response)
+
 
 def validate_gemini_config():
     """驗證 Gemini 配置"""

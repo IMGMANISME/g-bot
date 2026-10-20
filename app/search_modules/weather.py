@@ -213,6 +213,92 @@ def _multi_day_answer(city: str, forecasts: list[DayForecast], today: date) -> s
     return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class WeatherAnswer:
+    text: str  # 直接可回覆的模板文字
+    data: dict  # 給模型改寫用的結構化資料
+
+
+def _day_data(f: DayForecast, today: date) -> dict:
+    label = format_day(f.day, today)
+    return {
+        "date": label if label.endswith("）") else f"{label} {f.day:%m/%d}",
+        "weather": f.description,
+        "low_celsius": f.min_temp,
+        "high_celsius": f.max_temp,
+        "rain_chance_percent": f.max_pop,
+    }
+
+
+def _highlights(forecasts: list[DayForecast], today: date) -> list[str]:
+    """多天預報中值得特別提的日子：可能下雨、很熱、偏冷。"""
+    notes = []
+    for f in forecasts:
+        label = format_day(f.day, today)
+        if f.max_pop is not None and f.max_pop >= RAIN_LIKELY:
+            notes.append(f"{label}降雨機率 {f.max_pop}%，可能會下雨")
+        if f.max_temp is not None and f.max_temp >= HOT_TEMP:
+            notes.append(f"{label}最高 {f.max_temp} 度，會很熱")
+        elif f.max_temp is not None and f.max_temp <= COLD_MAX_TEMP:
+            notes.append(f"{label}最高只有 {f.max_temp} 度，偏冷")
+    return notes or ["這幾天天氣都蠻穩定的，沒有特別要注意的"]
+
+
+def lookup_weather(
+    city: str | None,
+    dates: list[date] | None,
+    focus: str,
+    today: date,
+    days: int = 5,
+) -> WeatherAnswer:
+    """依問題整理天氣：有指定日期就只取那幾天，focus 決定先講下雨還是溫度。
+
+    focus：rain（會不會下雨）、temperature（冷不冷）、general（一般）
+    """
+    assumed_city = not city
+    city = city or DEFAULT_CITY
+    note = f"\n\n（沒說地點，先幫你看{city}）" if assumed_city else ""
+    base = {"city": city, "city_was_assumed": assumed_city, "focus": focus}
+
+    def failed(message: str) -> WeatherAnswer:
+        return WeatherAnswer(message, {**base, "error": message})
+
+    dates = sorted(set(dates or []))
+    if dates and dates[-1] < today:
+        return failed("我只查得到今天以後的天氣預報，過去的天氣查不到喔。")
+
+    try:
+        forecasts = fetch_daily_forecast(city)
+    except WeatherUnavailable as e:
+        return failed(str(e))
+
+    forecasts = [f for f in forecasts if f.day >= today] or forecasts
+    by_day = {f.day: f for f in forecasts}
+    last_day = format_day(forecasts[-1].day, today)
+
+    if not dates:
+        # 沒指定日期：問下雨或冷熱時看今天，其他看接下來幾天
+        if focus in ("rain", "temperature"):
+            found = [forecasts[0]]
+            text = _day_answer(city, found[0], focus, today)
+            return WeatherAnswer(text + note, {**base, "days": [_day_data(f, today) for f in found]})
+
+        found = forecasts[:days]
+        data = {**base, "days": [_day_data(f, today) for f in found], "highlights": _highlights(found, today)}
+        return WeatherAnswer(_multi_day_answer(city, found, today) + note, data)
+
+    found = [by_day[d] for d in dates if d in by_day]
+    if not found:
+        return failed(f"目前預報只到{last_day}，{format_day(dates[0], today)}的天氣還查不到喔。")
+
+    text = "\n\n".join(_day_answer(city, f, focus, today) for f in found)
+    data = {**base, "days": [_day_data(f, today) for f in found]}
+    if len(found) < len([d for d in dates if d >= today]):
+        text += f"\n\n（預報只到{last_day}，之後的還查不到）"
+        data["note"] = f"預報只到{last_day}，之後的還查不到"
+    return WeatherAnswer(text + note, data)
+
+
 def answer_weather(
     city: str | None,
     dates: list[date] | None,
@@ -220,42 +306,7 @@ def answer_weather(
     today: date,
     days: int = 5,
 ) -> str:
-    """依問題回覆天氣：有指定日期就只回那幾天，focus 決定先講下雨還是溫度。
-
-    focus：rain（會不會下雨）、temperature（冷不冷）、general（一般）
-    """
-    note = ""
-    if not city:
-        city = DEFAULT_CITY
-        note = f"\n\n（沒說地點，先幫你看{city}）"
-
-    dates = sorted(set(dates or []))
-    if dates and dates[-1] < today:
-        return "我只查得到今天以後的天氣預報，過去的天氣查不到喔。"
-
-    try:
-        forecasts = fetch_daily_forecast(city)
-    except WeatherUnavailable as e:
-        return str(e)
-
-    forecasts = [f for f in forecasts if f.day >= today] or forecasts
-    by_day = {f.day: f for f in forecasts}
-
-    if not dates:
-        # 沒指定日期：問下雨或冷熱時看今天，其他看接下來幾天
-        if focus in ("rain", "temperature"):
-            return _day_answer(city, forecasts[0], focus, today) + note
-        return _multi_day_answer(city, forecasts[:days], today) + note
-
-    found = [by_day[d] for d in dates if d in by_day]
-    if not found:
-        last_day = format_day(forecasts[-1].day, today)
-        return f"目前預報只到{last_day}，{format_day(dates[0], today)}的天氣還查不到喔。"
-
-    answer = "\n\n".join(_day_answer(city, f, focus, today) for f in found)
-    if len(found) < len([d for d in dates if d >= today]):
-        answer += f"\n\n（預報只到{format_day(forecasts[-1].day, today)}，之後的還查不到）"
-    return answer + note
+    return lookup_weather(city, dates, focus, today, days).text
 
 
 def get_weather(city: str = DEFAULT_CITY, days: int = 5) -> str:

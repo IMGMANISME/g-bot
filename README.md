@@ -33,8 +33,8 @@ flowchart TB
     end
  
     subgraph ENGINES["Processing Engines"]
-        GEMINI["gemini_engine<br/>conversation & context"]
-        SEARCH["realtime_search<br/>query routing"]
+        GEMINI["gemini_engine<br/>chat & function calling"]
+        SEARCH["tools/<br/>fast-path rules · tool execution"]
         SCHED["APScheduler<br/>reminders · earthquake watch"]
     end
  
@@ -71,6 +71,7 @@ flowchart TB
 | `repositories/` | Data access | Centralizes database operations, making testing and storage swaps straightforward |
 | `search_modules/` | External API wrappers | Each external service is isolated, so one outage doesn't cascade |
 | `prompts/` | Bot behavior definitions | Prompts live in files rather than hardcoded strings, so they're version-controlled |
+| `tools/` | Tools the model can call (weather, reminders, restaurants, time) | Tool definitions, parameter validation and execution sit in one place; adding a tool doesn't touch the chat flow |
  
 ---
  
@@ -119,12 +120,12 @@ app/
 ├── config.py                  # Environment variables and settings validation
 ├── database.py                # SQLAlchemy engine, session, table initialization
 ├── line_bot.py                # LINE webhook event registration
-├── gemini_engine.py           # Gemini conversation and context handling
-├── realtime_search.py         # Real-time query routing
+├── gemini_engine.py           # Gemini calls: chat, tool selection, rewriting tool results
 ├── earthquake.py              # Earthquake data lookup and notification
 ├── schedule_notification.py   # APScheduler reminders and background tasks
 ├── handlers/                  # LINE event and command handling
-├── services/                  # Conversation, lookup, recommendation workflows
+├── services/                  # Message flow (assistant_service), restaurant recommendations
+├── tools/                     # Function Calling: tool definitions, fast-path rules, execution
 ├── models/                    # SQLAlchemy models
 ├── repositories/              # Database access layer
 ├── prompts/                   # Swappable bot system prompt templates

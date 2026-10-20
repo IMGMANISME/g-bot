@@ -1,10 +1,25 @@
-from linebot.models import QuickReply, QuickReplyButton, MessageAction, TextSendMessage
+from linebot.models import QuickReply, QuickReplyButton, MessageAction, LocationAction, TextSendMessage
 from app.repositories.user_repository import get_user_state
+from app.tools.executor import QuickReplyItem
+
+LINE_TEXT_LIMIT = 5000
 
 def create_quick_reply_buttons(items: list) -> QuickReply:
     buttons = [QuickReplyButton(action=MessageAction(label=label, text=text)) 
                for label, text in items]
     return QuickReply(items=buttons)
+
+def build_reply_message(text: str, quick_replies: list[QuickReplyItem]) -> TextSendMessage:
+    """文字回覆，可附快速回覆按鈕；text 為 None 的按鈕是「傳送位置」。"""
+    buttons = [
+        QuickReplyButton(action=LocationAction(label=item.label) if item.text is None
+                         else MessageAction(label=item.label, text=item.text))
+        for item in quick_replies[:13]
+    ]
+    return TextSendMessage(
+        text=text[:LINE_TEXT_LIMIT],
+        quick_reply=QuickReply(items=buttons) if buttons else None,
+    )
 
 def build_quick_intro_message(event, sender_id: str) -> TextSendMessage:
     state = get_user_state(sender_id)

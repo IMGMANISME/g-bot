@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass
 
 from app.config import config
 from app.repositories.user_repository import get_user_location
@@ -113,12 +114,48 @@ def _parse_restaurant_query(user_input: str) -> dict:
     }
 
 
-def get_restaurant_recommendation(sender_id: str, user_input: str) -> str:
+PRICE_RANGES = {
+    # (min_price, max_price, strict_price)
+    "cheap": (0, 1, True),
+    "medium": (2, 2, True),
+    "expensive": (3, 4, True),
+    "any": (0, 4, False),
+}
+
+
+@dataclass(frozen=True)
+class RestaurantResult:
+    text: str  # 餐廳清單或錯誤訊息，可直接回覆
+    place_ids: list[str]
+    needs_location: bool = False
+
+
+def build_restaurant_query(
+    user_input: str,
+    *,
+    price: str | None = None,
+    cuisine: str | None = None,
+    max_distance_m: int | None = None,
+    count: int | None = None,
+) -> dict:
+    """從原句解析條件，再用模型給的參數覆蓋。"""
+    query = _parse_restaurant_query(user_input)
+    if price in PRICE_RANGES:
+        query["min_price"], query["max_price"], query["strict_price"] = PRICE_RANGES[price]
+    if cuisine and cuisine.strip():
+        query["keyword"] = cuisine.strip()
+    if max_distance_m:
+        query["radius"] = max(300, min(int(max_distance_m), 12000))
+    if count:
+        query["max_results"] = max(1, min(int(count), 5))
+    return query
+
+
+def get_restaurant_recommendation(sender_id: str, query: dict) -> RestaurantResult:
     latlng = get_user_location(sender_id)
     if not latlng:
-        return "📍 請先傳送你的位置"
+        return RestaurantResult("想找附近好吃的話，先傳你的位置給我喔 📍", [], needs_location=True)
 
-    query = _parse_restaurant_query(user_input)
     recent_place_ids = set(_get_recent_restaurant_ids(sender_id))
     result, recommended_place_ids = search_restaurants_nearby(
         latlng[0],
@@ -127,4 +164,4 @@ def get_restaurant_recommendation(sender_id: str, user_input: str) -> str:
         exclude_place_ids=recent_place_ids,
     )
     _update_recent_restaurant_ids(sender_id, recommended_place_ids)
-    return result
+    return RestaurantResult(result, recommended_place_ids)

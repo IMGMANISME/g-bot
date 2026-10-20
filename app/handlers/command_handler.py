@@ -1,13 +1,11 @@
 # app/handlers/command_handler.py
 """命令處理器模組"""
 import re
-from datetime import time as dtime
-from typing import Optional, Tuple
+from typing import Optional
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions
-from app.utils.time_utils import format_run_at, next_daily_run, now_taipei
 
 logger = setup_logger("command_handler")
 
@@ -95,10 +93,10 @@ class UtilityCommandHandler(BaseCommandHandler):
         if command_lower == "#功能":
             function_text = (
                 "🛠️ 目前功能：\n"
-                "• 餐廳推薦 - 傳送位置並輸入「吃什麼?」\n"
+                "• 餐廳推薦 - 傳送位置後問我「吃什麼」或「附近有什麼便宜的拉麵」\n"
                 "• 天氣查詢 - 例如「台北天氣」「高雄明天會下雨嗎」「週末台中冷不冷」\n"
                 "• 時間查詢 - 輸入「現在幾點」或「今天幾號」\n"
-                "• 每日提醒 - 輸入「我的提醒」\n"
+                "• 提醒 - 例如「明天早上八點提醒我開會」「每天晚上十點提醒我吃藥」，輸入「我的提醒」查看\n"
                 "• 地震通知 - 輸入「地震通知開」、「地震通知關」或「地震門檻 4.5」\n"
                 "• 我的設定 - 查看回覆模式與地震通知\n"
                 "• 任意查詢 - 問我任何問題，我都會盡力回覆ㄛ～"
@@ -187,32 +185,20 @@ class ReminderCommandHandler(BaseCommandHandler):
     """提醒相關命令處理器"""
     
     def can_handle(self, command: str, context: dict) -> bool:
-        return any(keyword in command for keyword in ["提醒我", "取消提醒", "刪除全部提醒", "我的提醒"])
+        # 建立提醒（提醒我…）交給 assistant_service，讓自然說法也能設定
+        return any(keyword in command for keyword in ["取消提醒", "刪除全部提醒", "我的提醒"])
     
     @handle_exceptions("⚠️ 提醒設定失敗")
     def handle(self, command: str, context: dict) -> CommandResult:
         import re
         from app.repositories.notification_repository import (
-            add_scheduled_notification, delete_notification_by_id,
-            delete_all_notifications_for_user
+            delete_notification_by_id, delete_all_notifications_for_user
         )
         
         sender_id = context.get("chat_id") or context.get("sender_id")
         
-        # 設定提醒
-        if "提醒我" in command:
-            msg, at, repeat = self._parse_natural_reminder(command)
-            if msg and at:
-                now = now_taipei()
-                record = add_scheduled_notification(sender_id, msg, next_daily_run(at, now), repeat)
-                return CommandResult(
-                    True,
-                    f"⏰ 好，{format_run_at(record.next_run_at, repeat, now)} 提醒你「{msg}」"
-                )
-            return CommandResult(False, "❌ 提醒格式錯誤，請使用：提醒我 <內容> <時間>")
-        
         # 取消特定提醒
-        elif "取消提醒" in command:
+        if "取消提醒" in command:
             parts = command.split()
             if len(parts) > 1:
                 try:
@@ -239,19 +225,6 @@ class ReminderCommandHandler(BaseCommandHandler):
             return CommandResult(True, "SPECIAL_REPLY:我的提醒")
         
         return CommandResult(False, "未知的提醒命令")
-    
-    def _parse_natural_reminder(self, text: str) -> Tuple[Optional[str], Optional[dtime], bool]:
-        """解析「提醒我 <內容> <時間> [每天|一次]」，回傳內容、每日時間、是否每天"""
-        match = re.search(r"提醒我\s*(.+?)\s*(\d{1,2})[:點](\d{2})?\s*(每天|一次)?", text)
-        if match:
-            msg = match.group(1).strip()
-            hour = int(match.group(2))
-            minute = int(match.group(3)) if match.group(3) else 0
-            if hour > 23 or minute > 59:
-                return None, None, False
-            repeat = (match.group(4) == "每天")
-            return msg, dtime(hour, minute), repeat
-        return None, None, False
 
 class CommandProcessor:
     """命令處理器管理類"""

@@ -33,8 +33,8 @@ flowchart TB
     end
  
     subgraph ENGINES["處理引擎"]
-        GEMINI["gemini_engine<br/>對話與上下文"]
-        SEARCH["realtime_search<br/>查詢路由"]
+        GEMINI["gemini_engine<br/>對話與 Function Calling"]
+        SEARCH["tools/<br/>快速判斷 · 工具執行"]
         SCHED["APScheduler<br/>提醒 · 地震監控"]
     end
  
@@ -71,6 +71,7 @@ flowchart TB
 | `repositories/` | 資料存取 | 集中資料庫操作，方便測試與替換儲存後端 |
 | `search_modules/` | 外部 API 封裝 | 每個外部服務獨立，失效不影響其他功能 |
 | `prompts/` | Bot 行為定義 | 以檔案而非硬編碼管理 prompt，可版本控管 |
+| `tools/` | 模型可呼叫的工具（天氣、提醒、餐廳、時間） | 工具定義、參數檢查與執行集中一處，新增工具不用改對話流程 |
  
 ---
  
@@ -119,12 +120,12 @@ app/
 ├── config.py                  # 環境變數與設定驗證
 ├── database.py                # SQLAlchemy engine、session、資料表初始化
 ├── line_bot.py                # LINE webhook 事件註冊
-├── gemini_engine.py           # Gemini 對話與上下文處理
-├── realtime_search.py         # 即時查詢路由
+├── gemini_engine.py           # 呼叫 Gemini：聊天、選擇工具、改寫工具結果
 ├── earthquake.py              # 地震資料查詢與通知
 ├── schedule_notification.py   # APScheduler 提醒與背景任務
 ├── handlers/                  # LINE 事件與指令處理
-├── services/                  # 對話、即時查詢、餐廳推薦等業務流程
+├── services/                  # 訊息處理流程（assistant_service）、餐廳推薦
+├── tools/                     # Function Calling：工具定義、快速判斷規則、執行
 ├── models/                    # SQLAlchemy models
 ├── repositories/              # 資料庫存取層
 ├── prompts/                   # 可替換的 bot system prompt 文字模板
