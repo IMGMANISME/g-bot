@@ -1,6 +1,5 @@
 # app/search_modules/weather.py
 import requests
-import re
 import os
 from datetime import datetime
 from app.utils.logger import setup_logger
@@ -93,9 +92,31 @@ def get_weather(city: str = "臺中市", days: int = 5) -> str:
         logger.error(f"Weather API error: {e}")
         return "⚠️ 天氣資料查詢失敗"
 
-def extract_city(text: str) -> str:
-    match = re.search(r"(台|臺)?\S{1,3}[縣市]", text)
-    city = match.group() if match else "臺中市"
-    if not city.endswith(("市", "縣")):
-        city += "市"
-    return city
+# 中央氣象署 F-D0047-091 使用的 22 個縣市名稱
+CITY_NAMES = (
+    "臺北市", "新北市", "桃園市", "臺中市", "臺南市", "高雄市",
+    "基隆市", "新竹市", "嘉義市",
+    "新竹縣", "苗栗縣", "彰化縣", "南投縣", "雲林縣", "嘉義縣", "屏東縣",
+    "宜蘭縣", "花蓮縣", "臺東縣", "澎湖縣", "金門縣", "連江縣",
+)
+
+# 省略「縣/市」的簡稱；新竹、嘉義同時有縣與市，簡稱視為市
+CITY_ALIASES = {
+    **{name[:-1]: name for name in CITY_NAMES if name not in ("新竹縣", "嘉義縣")},
+    "馬祖": "連江縣",
+}
+
+
+def find_city(text: str) -> str | None:
+    """從句子中找出縣市名稱，有多個時取最先出現的；找不到回傳 None。"""
+    normalized = (text or "").replace("台", "臺")
+    best = None
+    for keyword, city in [(name, name) for name in CITY_NAMES] + list(CITY_ALIASES.items()):
+        pos = normalized.find(keyword)
+        if pos == -1:
+            continue
+        # 同位置時優先完整名稱（較長的關鍵字）
+        candidate = (pos, -len(keyword), city)
+        if best is None or candidate < best:
+            best = candidate
+    return best[2] if best else None
