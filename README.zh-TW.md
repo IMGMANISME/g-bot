@@ -132,6 +132,9 @@ app/
 ├── search_modules/            # 天氣、Google Maps 等查詢模組
 ├── utils/                     # logger、cache、decorators、LINE 工具
 └── views/                     # LINE quick reply / menu 建立
+
+scripts/                       # 以真實 Gemma 實測的腳本
+tests/                         # pytest 測試
 ```
  
 ## Bot Prompt
@@ -190,6 +193,28 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8787 --reload
 curl http://localhost:8787/health
 ```
  
+### 測試
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+測試不會連網路，LINE、Gemini、氣象署、Google Maps 都以假資料替換；測試中若有程式真的發出網路請求會直接失敗。
+
+資料庫相關測試需要一個**可以清空的** PostgreSQL，設定 `TEST_DATABASE_URL` 才會執行，否則自動略過：
+
+```bash
+TEST_DATABASE_URL=postgresql://user@localhost:5432/gbot_test pytest
+```
+
+要確認真的 Gemma 表現（工具選擇、改寫口吻），可以用 `scripts/` 下的實測腳本，需要 `GEMINI_API_KEY`：
+
+```bash
+python scripts/try_function_calling.py   # 工具選擇與參數是否正確
+python scripts/try_assistant.py          # 完整流程與回覆口吻（假資料，不寫資料庫）
+```
+
 ### LINE Developers 設定
  
 1. 開啟 LINE Developers Console。

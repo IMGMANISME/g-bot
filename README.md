@@ -132,6 +132,9 @@ app/
 ├── search_modules/            # Weather, Google Maps modules
 ├── utils/                     # Logger, cache, decorators, LINE helpers
 └── views/                     # LINE quick reply / menu builders
+
+scripts/                       # Scripts that exercise the real Gemma model
+tests/                         # pytest suite
 ```
  
 ## Bot Prompts
@@ -190,6 +193,28 @@ Health check:
 curl http://localhost:8787/health
 ```
  
+### Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Tests never touch the network: LINE, Gemini, CWA and Google Maps are replaced with fakes, and any real network request made during a test fails it.
+
+Database tests need a PostgreSQL database **you can wipe**. They run only when `TEST_DATABASE_URL` is set and are skipped otherwise:
+
+```bash
+TEST_DATABASE_URL=postgresql://user@localhost:5432/gbot_test pytest
+```
+
+To check how the real Gemma model behaves (tool choice, reply tone), use the scripts in `scripts/`. They need `GEMINI_API_KEY`:
+
+```bash
+python scripts/try_function_calling.py   # Does the model pick the right tool and arguments?
+python scripts/try_assistant.py          # Full flow and reply tone (fake data, no database writes)
+```
+
 ### LINE Developers Setup
  
 1. Open the LINE Developers Console.
