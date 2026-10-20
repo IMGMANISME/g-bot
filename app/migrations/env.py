@@ -24,6 +24,7 @@ def _configure(**kwargs):
     context.configure(
         target_metadata=target_metadata,
         compare_type=True,  # 欄位型別改變也要偵測到
+        compare_server_default=True,  # 欄位預設值改變也要偵測到
         **kwargs,
     )
 

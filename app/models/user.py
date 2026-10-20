@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Boolean, Float, false, true
+from sqlalchemy import Column, String, DateTime, Boolean, Float, false
 from datetime import datetime
 from app.models.base import Base
 
@@ -8,7 +8,7 @@ class UserState(Base):
     sender_id = Column(String, primary_key=True)
     is_silent = Column(Boolean, nullable=False, default=False, server_default=false())
     mention_mode = Column(Boolean, nullable=False, default=False, server_default=false())
-    earthquake_enabled = Column(Boolean, nullable=False, default=True, server_default=true())
+    earthquake_enabled = Column(Boolean, nullable=False, default=False, server_default=false())  # 預設關閉，要自己開
     earthquake_min_magnitude = Column(Float, nullable=True)
 
 class UserLocation(Base):

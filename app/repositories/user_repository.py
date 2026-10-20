@@ -99,20 +99,19 @@ def get_earthquake_settings(sender_id: str) -> dict:
     with SessionLocal() as db:
         state = db.query(UserState).filter_by(sender_id=sender_id).first()
         return {
-            "enabled": state.earthquake_enabled if state and state.earthquake_enabled is not None else True,
+            "enabled": bool(state.earthquake_enabled) if state else False,
             "min_magnitude": state.earthquake_min_magnitude if state else None,
         }
 
 def get_earthquake_recipient_ids(magnitude: float, default_min_magnitude: float) -> list[str]:
+    """有開啟地震通知、且規模達到各自門檻的聊天室"""
     with SessionLocal() as db:
-        states = db.query(UserState).all()
-        recipients = []
-        for state in states:
-            enabled = state.earthquake_enabled if state.earthquake_enabled is not None else True
-            min_magnitude = state.earthquake_min_magnitude or default_min_magnitude
-            if enabled and magnitude >= min_magnitude:
-                recipients.append(state.sender_id)
-        return recipients
+        states = db.query(UserState).filter(UserState.earthquake_enabled.is_(True)).all()
+        return [
+            state.sender_id
+            for state in states
+            if magnitude >= (state.earthquake_min_magnitude or default_min_magnitude)
+        ]
 
 def upsert_user_location(sender_id: str, lat: float, lng: float):
     with SessionLocal() as db:

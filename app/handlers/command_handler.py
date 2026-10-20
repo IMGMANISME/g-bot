@@ -168,13 +168,28 @@ class EarthquakeCommandHandler(BaseCommandHandler):
         state_id = context.get("state_id") or context.get("chat_id") or context.get("sender_id")
         normalized = command.strip().lower()
 
+        prefix = self._prefix(context)
         if any(word in normalized for word in ["關", "停", "off", "取消"]):
             set_earthquake_subscription(state_id, False)
-            return CommandResult(True, "地震通知已關閉。")
+            return CommandResult(
+                True,
+                "地震通知已關閉，之後不會再推播地震消息。",
+                quick_replies=[QuickReplyItem("重新開啟", f"{prefix}地震通知開")],
+            )
 
         if any(word in normalized for word in ["開", "啟用", "on"]):
             set_earthquake_subscription(state_id, True)
-            return CommandResult(True, "地震通知已開啟。")
+            min_magnitude = get_earthquake_settings(state_id)["min_magnitude"] or config.EARTHQUAKE_MIN_MAGNITUDE
+            return CommandResult(
+                True,
+                f"🌍 地震通知已開啟，規模 {min_magnitude} 以上的地震會馬上通知你。\n想調整門檻可以點下面的按鈕。",
+                quick_replies=[
+                    QuickReplyItem("門檻 4.0", f"{prefix}地震門檻 4.0"),
+                    QuickReplyItem("門檻 4.5", f"{prefix}地震門檻 4.5"),
+                    QuickReplyItem("門檻 5.0", f"{prefix}地震門檻 5.0"),
+                    QuickReplyItem("關閉", f"{prefix}地震通知關"),
+                ],
+            )
 
         match = re.search(r"地震門檻\s*(\d+(?:\.\d+)?)", command)
         if match:
@@ -184,13 +199,13 @@ class EarthquakeCommandHandler(BaseCommandHandler):
                     False,
                     "地震門檻請設定 0 到 10 之間的規模，常用的是 4 到 5。",
                     quick_replies=[
-                        QuickReplyItem("門檻 4.0", f"{self._prefix(context)}地震門檻 4.0"),
-                        QuickReplyItem("門檻 4.5", f"{self._prefix(context)}地震門檻 4.5"),
-                        QuickReplyItem("門檻 5.0", f"{self._prefix(context)}地震門檻 5.0"),
+                        QuickReplyItem("門檻 4.0", f"{prefix}地震門檻 4.0"),
+                        QuickReplyItem("門檻 4.5", f"{prefix}地震門檻 4.5"),
+                        QuickReplyItem("門檻 5.0", f"{prefix}地震門檻 5.0"),
                     ],
                 )
             set_earthquake_min_magnitude(state_id, magnitude)
-            return CommandResult(True, f"地震通知門檻已改成規模 {magnitude}。")
+            return CommandResult(True, f"🌍 好，規模 {magnitude} 以上的地震會通知你（地震通知已開啟）。")
 
         settings = get_earthquake_settings(state_id)
         min_magnitude = settings["min_magnitude"] or config.EARTHQUAKE_MIN_MAGNITUDE

@@ -397,10 +397,12 @@ docker run -d \
  
 ### Earthquake Notifications
  
+Earthquake alerts are **off by default**; each chat opts in:
+
 ```
 地震通知開                  # Enable earthquake alerts
 地震通知關                  # Disable earthquake alerts
-地震門檻 4.5                # Set magnitude threshold to 4.5
+地震門檻 4.5                # Set magnitude threshold to 4.5 (also enables alerts)
 ```
  
 ### Real-Time Lookups

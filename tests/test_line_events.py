@@ -161,3 +161,38 @@ def test_group_reply_quotes_the_message(bot):
 def test_one_on_one_reply_does_not_quote(bot):
     reply = bot["send"](text_event(USER, "#狀態"))
     assert reply.quote_token is None
+
+
+@pytest.fixture
+def earthquake_settings(monkeypatch):
+    settings = {"enabled": False, "min_magnitude": None}
+    monkeypatch.setattr(user_repository, "set_earthquake_subscription", lambda cid, enabled: settings.update(enabled=enabled))
+    monkeypatch.setattr(user_repository, "set_earthquake_min_magnitude",
+                        lambda cid, magnitude: settings.update(enabled=True, min_magnitude=magnitude))
+    monkeypatch.setattr(user_repository, "get_earthquake_settings", lambda cid: dict(settings))
+    return settings
+
+
+def test_turning_earthquake_alerts_on_offers_thresholds(bot, earthquake_settings):
+    reply = bot["send"](text_event(USER, "地震通知開"))
+    assert earthquake_settings["enabled"] is True
+    assert "規模 4.0 以上" in reply.text
+    assert button_texts(reply) == ["地震門檻 4.0", "地震門檻 4.5", "地震門檻 5.0", "地震通知關"]
+
+
+def test_turning_earthquake_alerts_off_offers_undo(bot, earthquake_settings):
+    earthquake_settings["enabled"] = True
+    reply = bot["send"](text_event(USER, "地震通知關"))
+    assert earthquake_settings["enabled"] is False
+    assert button_texts(reply) == ["地震通知開"]
+
+
+def test_setting_threshold_turns_alerts_on(bot, earthquake_settings):
+    reply = bot["send"](text_event(USER, "地震門檻 4.5"))
+    assert earthquake_settings == {"enabled": True, "min_magnitude": 4.5}
+    assert "規模 4.5 以上" in reply.text
+
+
+def test_welcome_mentions_earthquake_alerts(bot):
+    reply = bot["send"](event("follow", USER, follow={"isUnblocked": False}))
+    assert "地震通知開" in reply.text

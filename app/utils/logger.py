@@ -106,6 +106,9 @@ def configure_root_logging(level: str | None = None) -> None:
         os.getenv("APSCHEDULER_LOG_LEVEL", "WARNING").upper()
     )
 
+    # Alembic 每次啟動都會列出載入的外掛，只保留 WARNING 以上
+    logging.getLogger("alembic.runtime.plugins").setLevel(logging.WARNING)
+
     if root_logger.handlers:
         for handler in root_logger.handlers:
             handler.setLevel(getattr(logging, resolved_level, logging.INFO))

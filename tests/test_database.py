@@ -52,7 +52,7 @@ def test_models_match_migrations(db):
 
     load_all_models()
     with db.connect() as connection:
-        context = MigrationContext.configure(connection, opts={"compare_type": True})
+        context = MigrationContext.configure(connection, opts={"compare_type": True, "compare_server_default": True})
         assert compare_metadata(context, Base.metadata) == []
 
 
@@ -97,7 +97,7 @@ def test_user_state_defaults_and_modes(db):
     from app.repositories import user_repository as repo
 
     assert repo.get_user_state("C1") == "active"
-    assert repo.get_earthquake_settings("C1") == {"enabled": True, "min_magnitude": None}
+    assert repo.get_earthquake_settings("C1") == {"enabled": False, "min_magnitude": None}
     repo.set_user_state("C1", "silent_mention")
     assert repo.get_user_state("C1") == "silent_mention"
     repo.set_user_state("C1", "active")
@@ -138,3 +138,35 @@ def test_job_lock(db):
 
     assert try_acquire_job_lock("test", ttl_seconds=60) is True
     assert try_acquire_job_lock("test", ttl_seconds=60) is False
+
+
+def test_earthquake_recipients(db):
+    from app.repositories import user_repository as repo
+
+    repo.get_user_state("C_default")  # 建立預設設定：沒開地震通知
+    repo.set_earthquake_subscription("C_on", True)
+    repo.set_earthquake_min_magnitude("C_high", 5.5)  # 設門檻也會順便開啟
+    repo.set_earthquake_subscription("C_off", False)
+
+    assert sorted(repo.get_earthquake_recipient_ids(4.5, default_min_magnitude=4.0)) == ["C_on"]
+    assert sorted(repo.get_earthquake_recipient_ids(6.0, default_min_magnitude=4.0)) == ["C_high", "C_on"]
+    assert repo.get_earthquake_recipient_ids(3.0, default_min_magnitude=4.0) == []
+
+
+def test_migration_0002_turns_existing_alerts_off(empty_db):
+    """0001 時代的聊天室預設是開啟的，升級到 0002 後一律關閉，新聊天室也預設關閉"""
+    from alembic import command
+    from app.db_migrations import alembic_config, upgrade_database
+
+    cfg = alembic_config()
+    with empty_db.begin() as connection:
+        cfg.attributes["connection"] = connection
+        command.upgrade(cfg, "0001")
+        connection.execute(text("INSERT INTO user_state (sender_id) VALUES ('C_old')"))
+        assert connection.execute(text("SELECT earthquake_enabled FROM user_state")).scalar() is True
+
+    upgrade_database()
+    with empty_db.begin() as connection:
+        assert connection.execute(text("SELECT earthquake_enabled FROM user_state WHERE sender_id = 'C_old'")).scalar() is False
+        connection.execute(text("INSERT INTO user_state (sender_id) VALUES ('C_new')"))
+        assert connection.execute(text("SELECT earthquake_enabled FROM user_state WHERE sender_id = 'C_new'")).scalar() is False
