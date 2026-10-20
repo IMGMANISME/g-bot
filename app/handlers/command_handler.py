@@ -1,11 +1,13 @@
 # app/handlers/command_handler.py
 """命令處理器模組"""
 import re
+from datetime import time as dtime
 from typing import Optional, Tuple
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions
+from app.utils.time_utils import format_run_at, next_daily_run, now_taipei
 
 logger = setup_logger("command_handler")
 
@@ -199,12 +201,13 @@ class ReminderCommandHandler(BaseCommandHandler):
         
         # 設定提醒
         if "提醒我" in command:
-            msg, time_str, repeat = self._parse_natural_reminder(command)
-            if msg and time_str:
-                add_scheduled_notification(sender_id, msg, time_str, repeat)
+            msg, at, repeat = self._parse_natural_reminder(command)
+            if msg and at:
+                now = now_taipei()
+                record = add_scheduled_notification(sender_id, msg, next_daily_run(at, now), repeat)
                 return CommandResult(
-                    True, 
-                    f"⏰ 提醒已設定：{time_str}｜每天：{'是' if repeat else '否'}｜內容：「{msg}」"
+                    True,
+                    f"⏰ 好，{format_run_at(record.next_run_at, repeat, now)} 提醒你「{msg}」"
                 )
             return CommandResult(False, "❌ 提醒格式錯誤，請使用：提醒我 <內容> <時間>")
         
@@ -237,16 +240,17 @@ class ReminderCommandHandler(BaseCommandHandler):
         
         return CommandResult(False, "未知的提醒命令")
     
-    def _parse_natural_reminder(self, text: str) -> Tuple[Optional[str], Optional[str], bool]:
-        """解析自然語言提醒"""
-        import re
+    def _parse_natural_reminder(self, text: str) -> Tuple[Optional[str], Optional[dtime], bool]:
+        """解析「提醒我 <內容> <時間> [每天|一次]」，回傳內容、每日時間、是否每天"""
         match = re.search(r"提醒我\s*(.+?)\s*(\d{1,2})[:點](\d{2})?\s*(每天|一次)?", text)
         if match:
             msg = match.group(1).strip()
             hour = int(match.group(2))
             minute = int(match.group(3)) if match.group(3) else 0
+            if hour > 23 or minute > 59:
+                return None, None, False
             repeat = (match.group(4) == "每天")
-            return msg, f"{hour:02d}:{minute:02d}", repeat
+            return msg, dtime(hour, minute), repeat
         return None, None, False
 
 class CommandProcessor:

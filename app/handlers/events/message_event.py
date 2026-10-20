@@ -2,6 +2,7 @@ from linebot.models import TextSendMessage, QuickReply, QuickReplyButton, Messag
 from app.config import config
 from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions, rate_limit
+from app.utils.time_utils import format_run_at, now_taipei
 from app.utils.line_utils import (
     get_sender_id, get_chat_id, safe_reply, show_loading_animation, 
     get_memory_id, get_or_fetch_user_name, line_bot_api,
@@ -27,9 +28,14 @@ def handle_reminder_list(event, sender_id: str):
         safe_reply(event, "📭 你目前沒有任何提醒喔！")
         return
     
+    now = now_taipei()
     lines = ["📋你的提醒列表："]
     for b in notifications:
-        lines.append(f"• 編號: {b.id}｜{'每天' if b.repeat_daily else '一次'}｜{b.time.strftime('%H:%M')}｜{b.message}")
+        when = (
+            format_run_at(b.next_run_at, b.repeat_daily, now) if b.next_run_at
+            else f"{'每天' if b.repeat_daily else '一次'} {b.time.strftime('%H:%M')}"
+        )
+        lines.append(f"• 編號 {b.id}｜{when}｜{b.message}")
 
     if len(notifications) > 8:
         lines.append("\n...還有更多提醒，請使用「我的提醒」來查看。\n如果要刪除，請輸入：\n取消提醒 <編號>")

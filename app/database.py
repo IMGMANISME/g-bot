@@ -15,7 +15,10 @@ COMPAT_COLUMNS = {
     "user_state": {
         "earthquake_enabled": "BOOLEAN DEFAULT TRUE",
         "earthquake_min_magnitude": "FLOAT",
-    }
+    },
+    "scheduled_notifications": {
+        "next_run_at": "TIMESTAMP WITH TIME ZONE",
+    },
 }
 
 # 建立資料庫引擎，使用連接池
