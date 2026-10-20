@@ -1,96 +1,20 @@
 # app/search_modules/weather.py
-import requests
 import os
-from datetime import datetime
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import date, datetime
+from typing import Optional
+
+import requests
+
 from app.utils.logger import setup_logger
+from app.utils.time_utils import format_day, now_taipei
 
 logger = setup_logger(__name__)
 
 CWA_API_KEY = os.getenv("CWA_API_KEY")
-
-
-def get_weather(city: str = "臺中市", days: int = 5) -> str:
-    if not CWA_API_KEY:
-        return "⚠️ 未設置氣象資料的 API 金鑰，請聯絡管理員。"
-
-    try:
-        url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-091"
-        params = {"Authorization": CWA_API_KEY, "locationName": city}
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-
-        locations = data.get("records", {}).get("Locations", [])
-        if not locations or not locations[0].get("Location"):
-            return f"⚠️ 查無 {city} 的天氣資料。"
-
-        location_data = locations[0]["Location"][0]
-        weather_elements = {
-            el["ElementName"]: el["Time"]
-            for el in location_data.get("WeatherElement", [])
-        }
-
-        time_slots = weather_elements.get("天氣現象", [])
-        from collections import defaultdict
-        daily_data = defaultdict(list)
-
-        for i in range(len(time_slots)):
-            try:
-                start = time_slots[i]["StartTime"]
-                date_key = datetime.fromisoformat(start).strftime("%Y-%m-%d")
-
-                daily_data[date_key].append({
-                    "weather": time_slots[i]["ElementValue"][0].get("Weather", "未知"),
-                    "min_temp": weather_elements["最低溫度"][i]["ElementValue"][0].get("MinTemperature", "N/A"),
-                    "max_temp": weather_elements["最高溫度"][i]["ElementValue"][0].get("MaxTemperature", "N/A"),
-                    "pop": weather_elements["12小時降雨機率"][i]["ElementValue"][0].get("ProbabilityOfPrecipitation", "N/A")
-                })
-            except (IndexError, KeyError):
-                continue
-
-        def get_weekday(date_str: str) -> str:
-            week_map = ["一", "二", "三", "四", "五", "六", "日"]
-            dt = datetime.strptime(date_str, "%Y-%m-%d")
-            return week_map[dt.weekday()]
-
-        def get_weather_icon(desc: str) -> str:
-            if "雷" in desc or "雨" in desc:
-                return "🌧️"
-            elif "陰" in desc and "雨" not in desc:
-                return "☁️"
-            elif "晴" in desc and "雲" in desc:
-                return "🌤️"
-            elif "晴" in desc:
-                return "☀️"
-            elif "雲" in desc:
-                return "🌥️"
-            else:
-                return "🌈"
-
-        output = [f"☀️ {city}未來{days}天天氣預報 ☀️\n"]
-
-        for date in sorted(daily_data.keys())[:days]:
-            entries = daily_data[date]
-            dt = datetime.strptime(date, "%Y-%m-%d")
-            weekday = get_weekday(date)
-
-            weathers = "、".join(set(e["weather"] for e in entries))
-            pop_vals = [int(e["pop"]) for e in entries if str(e["pop"]).isdigit()]
-            min_temps = [int(e["min_temp"]) for e in entries if str(e["min_temp"]).isdigit()]
-            max_temps = [int(e["max_temp"]) for e in entries if str(e["max_temp"]).isdigit()]
-            icon = get_weather_icon(weathers)
-
-            pop_text = f"{min(pop_vals)}% ~ {max(pop_vals)}%" if pop_vals else "無資料"
-            temp_text = f"{min(min_temps)}°C ~ {max(max_temps)}°C" if min_temps and max_temps else "無資料"
-
-            output.append(f"📅 {dt.strftime('%m/%d')} ({weekday})：{weathers} {icon}，降雨機率 {pop_text}，氣溫 {temp_text}。")
-
-        output.append("\n提醒您，天氣變化多端，出門記得攜帶雨具喔 ☔️")
-        return "\n".join(output)
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Weather API error: {e}")
-        return "⚠️ 天氣資料查詢失敗"
+FORECAST_URL = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-091"
+DEFAULT_CITY = "臺中市"
 
 # 中央氣象署 F-D0047-091 使用的 22 個縣市名稱
 CITY_NAMES = (
@@ -106,6 +30,29 @@ CITY_ALIASES = {
     "馬祖": "連江縣",
 }
 
+RAIN_LIKELY = 50  # 降雨機率達到這個值就提醒帶傘
+RAIN_POSSIBLE = 30
+HOT_TEMP = 30
+COLD_MAX_TEMP = 20  # 最高溫不到這個值，整天都偏冷
+COOL_MIN_TEMP = 16  # 最低溫低於這個值，早晚會涼
+
+
+class WeatherUnavailable(Exception):
+    """天氣資料取得失敗，訊息可直接回覆給使用者。"""
+
+
+@dataclass(frozen=True)
+class DayForecast:
+    day: date
+    weathers: tuple[str, ...]  # 當天各時段的天氣現象，依時間排序、不重複
+    min_temp: Optional[int]
+    max_temp: Optional[int]
+    max_pop: Optional[int]  # 當天各時段中最高的降雨機率（%）
+
+    @property
+    def description(self) -> str:
+        return "轉".join(self.weathers) or "未知"
+
 
 def find_city(text: str) -> str | None:
     """從句子中找出縣市名稱，有多個時取最先出現的；找不到回傳 None。"""
@@ -120,3 +67,197 @@ def find_city(text: str) -> str | None:
         if best is None or candidate < best:
             best = candidate
     return best[2] if best else None
+
+
+def _to_int(value) -> Optional[int]:
+    return int(value) if str(value).isdigit() else None
+
+
+def parse_daily_forecast(data: dict) -> list[DayForecast]:
+    """把中央氣象署 12 小時一段的預報，整理成每天一筆。"""
+    locations = data.get("records", {}).get("Locations", [])
+    if not locations or not locations[0].get("Location"):
+        return []
+
+    location_data = locations[0]["Location"][0]
+    weather_elements = {
+        el["ElementName"]: el["Time"]
+        for el in location_data.get("WeatherElement", [])
+    }
+
+    slots_by_day = defaultdict(list)
+    for i, slot in enumerate(weather_elements.get("天氣現象", [])):
+        try:
+            day = datetime.fromisoformat(slot["StartTime"]).date()
+            slots_by_day[day].append({
+                "weather": slot["ElementValue"][0].get("Weather", "未知"),
+                "min_temp": _to_int(weather_elements["最低溫度"][i]["ElementValue"][0].get("MinTemperature")),
+                "max_temp": _to_int(weather_elements["最高溫度"][i]["ElementValue"][0].get("MaxTemperature")),
+                "pop": _to_int(weather_elements["12小時降雨機率"][i]["ElementValue"][0].get("ProbabilityOfPrecipitation")),
+            })
+        except (IndexError, KeyError, ValueError):
+            continue
+
+    forecasts = []
+    for day in sorted(slots_by_day):
+        slots = slots_by_day[day]
+        min_temps = [s["min_temp"] for s in slots if s["min_temp"] is not None]
+        max_temps = [s["max_temp"] for s in slots if s["max_temp"] is not None]
+        pops = [s["pop"] for s in slots if s["pop"] is not None]
+        forecasts.append(DayForecast(
+            day=day,
+            weathers=tuple(dict.fromkeys(s["weather"] for s in slots)),
+            min_temp=min(min_temps) if min_temps else None,
+            max_temp=max(max_temps) if max_temps else None,
+            max_pop=max(pops) if pops else None,
+        ))
+    return forecasts
+
+
+def fetch_daily_forecast(city: str) -> list[DayForecast]:
+    if not CWA_API_KEY:
+        raise WeatherUnavailable("⚠️ 未設置氣象資料的 API 金鑰，請聯絡管理員。")
+
+    try:
+        response = requests.get(
+            FORECAST_URL,
+            params={"Authorization": CWA_API_KEY, "locationName": city},
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except (requests.exceptions.RequestException, ValueError) as e:
+        logger.error(f"Weather API error: {e}")
+        raise WeatherUnavailable("⚠️ 天氣資料查詢失敗，請稍後再試。")
+
+    forecasts = parse_daily_forecast(data)
+    if not forecasts:
+        logger.warning(f"天氣資料解析後為空: city={city}")
+        raise WeatherUnavailable(f"⚠️ 查無 {city} 的天氣資料。")
+    return forecasts
+
+
+# --- 回覆格式 ---
+
+def _weather_icon(desc: str) -> str:
+    if "雷" in desc or "雨" in desc:
+        return "🌧️"
+    if "陰" in desc:
+        return "☁️"
+    if "晴" in desc and "雲" in desc:
+        return "🌤️"
+    if "晴" in desc:
+        return "☀️"
+    if "雲" in desc:
+        return "🌥️"
+    return "🌈"
+
+
+def _temp_text(f: DayForecast) -> str:
+    if f.min_temp is None or f.max_temp is None:
+        return "氣溫無資料"
+    return f"{f.min_temp}–{f.max_temp}°C"
+
+
+def _pop_text(f: DayForecast) -> str:
+    return "降雨機率無資料" if f.max_pop is None else f"降雨機率 {f.max_pop}%"
+
+
+def _rain_advice(f: DayForecast) -> str:
+    if f.max_pop is None:
+        return "降雨機率沒有資料，出門前再看一下天空"
+    if f.max_pop >= RAIN_LIKELY:
+        return f"降雨機率 {f.max_pop}%，記得帶傘 ☔"
+    if f.max_pop >= RAIN_POSSIBLE:
+        return f"降雨機率 {f.max_pop}%，可能會下雨，帶把傘比較保險"
+    return f"降雨機率 {f.max_pop}%，應該不太會下雨"
+
+
+def _temperature_advice(f: DayForecast) -> str:
+    if f.min_temp is None or f.max_temp is None:
+        return "氣溫沒有資料"
+    if f.max_temp >= HOT_TEMP:
+        feel = "會滿熱的，記得多喝水"
+    elif f.max_temp <= COLD_MAX_TEMP:
+        feel = "偏冷，記得穿外套"
+    elif f.min_temp <= COOL_MIN_TEMP:
+        feel = "早晚偏涼，記得帶件外套"
+    elif f.max_temp - f.min_temp >= 8:
+        feel = "早晚溫差大，帶件薄外套"
+    else:
+        feel = "溫度還算舒服"
+    return f"{_temp_text(f)}，{feel}"
+
+
+def _day_answer(city: str, f: DayForecast, focus: str, today: date) -> str:
+    label = format_day(f.day, today)
+    icon = _weather_icon(f.description)
+    if focus == "rain":
+        return f"{label}{city}{_rain_advice(f)}\n（{f.description} {icon}，{_temp_text(f)}）"
+    if focus == "temperature":
+        return f"{label}{city} {_temperature_advice(f)}\n（{f.description} {icon}，{_pop_text(f)}）"
+    tip = "，記得帶傘 ☔" if f.max_pop is not None and f.max_pop >= RAIN_LIKELY else ""
+    return f"{label}{city}{f.description} {icon}\n{_temp_text(f)}，{_pop_text(f)}{tip}"
+
+
+def _multi_day_answer(city: str, forecasts: list[DayForecast], today: date) -> str:
+    lines = [f"{city}接下來 {len(forecasts)} 天的天氣："]
+    for f in forecasts:
+        lines.append(
+            f"📅 {format_day(f.day, today)}：{f.description} {_weather_icon(f.description)}，"
+            f"{_temp_text(f)}，{_pop_text(f)}"
+        )
+    rainy = [format_day(f.day, today) for f in forecasts if f.max_pop is not None and f.max_pop >= RAIN_LIKELY]
+    if rainy:
+        lines.append(f"\n{'、'.join(rainy)}比較可能下雨，記得帶傘 ☔")
+    return "\n".join(lines)
+
+
+def answer_weather(
+    city: str | None,
+    dates: list[date] | None,
+    focus: str,
+    today: date,
+    days: int = 5,
+) -> str:
+    """依問題回覆天氣：有指定日期就只回那幾天，focus 決定先講下雨還是溫度。
+
+    focus：rain（會不會下雨）、temperature（冷不冷）、general（一般）
+    """
+    note = ""
+    if not city:
+        city = DEFAULT_CITY
+        note = f"\n\n（沒說地點，先幫你看{city}）"
+
+    dates = sorted(set(dates or []))
+    if dates and dates[-1] < today:
+        return "我只查得到今天以後的天氣預報，過去的天氣查不到喔。"
+
+    try:
+        forecasts = fetch_daily_forecast(city)
+    except WeatherUnavailable as e:
+        return str(e)
+
+    forecasts = [f for f in forecasts if f.day >= today] or forecasts
+    by_day = {f.day: f for f in forecasts}
+
+    if not dates:
+        # 沒指定日期：問下雨或冷熱時看今天，其他看接下來幾天
+        if focus in ("rain", "temperature"):
+            return _day_answer(city, forecasts[0], focus, today) + note
+        return _multi_day_answer(city, forecasts[:days], today) + note
+
+    found = [by_day[d] for d in dates if d in by_day]
+    if not found:
+        last_day = format_day(forecasts[-1].day, today)
+        return f"目前預報只到{last_day}，{format_day(dates[0], today)}的天氣還查不到喔。"
+
+    answer = "\n\n".join(_day_answer(city, f, focus, today) for f in found)
+    if len(found) < len([d for d in dates if d >= today]):
+        answer += f"\n\n（預報只到{format_day(forecasts[-1].day, today)}，之後的還查不到）"
+    return answer + note
+
+
+def get_weather(city: str = DEFAULT_CITY, days: int = 5) -> str:
+    """接下來幾天的天氣預報（不指定日期與重點）。"""
+    return answer_weather(city, None, "general", now_taipei().date(), days)

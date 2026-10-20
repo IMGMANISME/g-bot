@@ -362,7 +362,9 @@ docker run -d \
 ### Real-Time Lookups
  
 ```
-台北天氣                    # Taipei weather
+台北天氣                    # Taipei weather for the next 5 days
+高雄明天會下雨嗎            # Will it rain in Kaohsiung tomorrow?
+週末台中冷不冷              # Will it be cold in Taichung this weekend?
 現在幾點                    # Current time
 附近餐廳                    # Nearby restaurants
 ```
