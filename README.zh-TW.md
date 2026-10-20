@@ -279,7 +279,7 @@ G-Bot 會用 LINE 顯示名稱比對這份清單。命中時，AI 會用更禮�
 | 變數 | 說明 |
 |---|---|
 | `CWA_API_KEY` | 中央氣象署 API key，用於天氣與地震 |
-| `GOOGLE_MAPS_API_KEY` | Google Maps API key，用於餐廳推薦 |
+| `GOOGLE_MAPS_API_KEY` | 需啟用 **Places API (New)** 的 Google Maps API key，用於餐廳推薦。建議放在獨立、有綁帳單的 Google Cloud 專案 |
 | `WEATHER_API_KEY` | 天氣 API key |
  
 ### 餐廳推薦

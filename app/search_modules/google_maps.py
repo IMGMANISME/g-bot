@@ -11,7 +11,33 @@ from app.utils.logger import setup_logger
 logger = setup_logger("google_maps")
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-GOOGLE_PLACES_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+# Places API (New) Text Search；舊版 Nearby Search 已無法在新專案啟用
+GOOGLE_PLACES_URL = "https://places.googleapis.com/v1/places:searchText"
+PLACES_FIELD_MASK = ",".join([
+    "places.id",
+    "places.displayName",
+    "places.shortFormattedAddress",
+    "places.location",
+    "places.rating",
+    "places.userRatingCount",
+    "places.priceLevel",
+])
+# 新版價位是列舉值，轉回舊版 0–4 的數字，排序與資料庫沿用原本的邏輯
+PRICE_LEVELS = {
+    "PRICE_LEVEL_FREE": 0,
+    "PRICE_LEVEL_INEXPENSIVE": 1,
+    "PRICE_LEVEL_MODERATE": 2,
+    "PRICE_LEVEL_EXPENSIVE": 3,
+    "PRICE_LEVEL_VERY_EXPENSIVE": 4,
+}
+# 查詢時可用的價位（不能用 FREE）
+REQUEST_PRICE_LEVELS = {level: name for name, level in PRICE_LEVELS.items() if level > 0}
+HTTP_ERROR_STATUSES = {
+    400: "INVALID_REQUEST",
+    401: "REQUEST_DENIED",
+    403: "REQUEST_DENIED",
+    429: "OVER_QUERY_LIMIT",
+}
 API_TIMEOUT_SECONDS = 8
 FATAL_API_STATUSES = {
     "OVER_QUERY_LIMIT",
@@ -40,7 +66,8 @@ def _haversine_meters(lat1: float, lng1: float, lat2: float, lng2: float) -> flo
 def _format_price(price_level: Optional[int]) -> str:
     if price_level is None:
         return "未提供"
-    return "$" * (price_level + 1)
+    # 與 Google Maps 顯示一致：便宜 $、中等 $$、貴 $$$、很貴 $$$$
+    return "$" * max(price_level, 1)
 
 
 def _format_distance(distance_m: Optional[float]) -> str:
@@ -58,6 +85,20 @@ def _safe_float(value) -> Optional[float]:
         return None
 
 
+def _to_legacy_place(place: dict) -> dict:
+    """把 Places API (New) 的結果轉成舊版欄位，後續排序、訊息與資料庫都不用改。"""
+    location = place.get("location") or {}
+    return {
+        "place_id": place.get("id"),
+        "name": (place.get("displayName") or {}).get("text"),
+        "vicinity": place.get("shortFormattedAddress"),
+        "geometry": {"location": {"lat": location.get("latitude"), "lng": location.get("longitude")}},
+        "rating": place.get("rating"),
+        "user_ratings_total": place.get("userRatingCount", 0),
+        "price_level": PRICE_LEVELS.get(place.get("priceLevel")),
+    }
+
+
 def _fetch_nearby(
     lat: float,
     lng: float,
@@ -67,33 +108,61 @@ def _fetch_nearby(
     open_now: bool,
     keyword: Optional[str],
 ) -> Tuple[str, list]:
-    params = {
-        "location": f"{lat},{lng}",
-        "radius": radius,
-        "type": "restaurant",
-        "language": "zh-TW",
-        "key": GOOGLE_API_KEY,
-        "minprice": min_price,
-        "maxprice": max_price,
+    """搜尋附近餐廳，回傳（舊版風格的狀態碼, 舊版欄位的結果）。"""
+    body = {
+        "textQuery": keyword or "餐廳",
+        "includedType": "restaurant",
+        "languageCode": "zh-TW",
+        "regionCode": "TW",
+        "pageSize": 20,
+        # 新版只能用「偏好」範圍，超出半徑的結果在下面過濾掉
+        "locationBias": {"circle": {"center": {"latitude": lat, "longitude": lng}, "radius": float(min(radius, 50000))}},
     }
     if open_now:
-        params["opennow"] = True
-    if keyword:
-        params["keyword"] = keyword
+        body["openNow"] = True
+    levels = [REQUEST_PRICE_LEVELS[level] for level in range(max(min_price, 1), max_price + 1) if level in REQUEST_PRICE_LEVELS]
+    if levels and len(levels) < len(REQUEST_PRICE_LEVELS):
+        body["priceLevels"] = levels
 
+    headers = {
+        "X-Goog-Api-Key": GOOGLE_API_KEY,
+        "X-Goog-FieldMask": PLACES_FIELD_MASK,
+        "Content-Type": "application/json",
+    }
     try:
-        response = requests.get(GOOGLE_PLACES_URL, params=params, timeout=API_TIMEOUT_SECONDS)
-        response.raise_for_status()
-        payload = response.json()
+        response = requests.post(GOOGLE_PLACES_URL, json=body, headers=headers, timeout=API_TIMEOUT_SECONDS)
     except requests.RequestException as e:
         logger.warning(f"Google Places 連線失敗: {e}")
         return "API_CONNECTION_ERROR", []
-    except Exception as e:
+
+    if response.status_code != 200:
+        try:
+            error = response.json().get("error", {})
+        except ValueError:
+            error = {}
+        status = HTTP_ERROR_STATUSES.get(response.status_code, "UNKNOWN_ERROR")
+        logger.warning(
+            f"Google Places 錯誤 {response.status_code} {error.get('status', '')}: {error.get('message', '')[:200]}"
+        )
+        return status, []
+
+    try:
+        places = response.json().get("places", [])
+    except ValueError as e:
         logger.warning(f"Google Places 回應解析失敗: {e}")
         return "API_CONNECTION_ERROR", []
 
-    status = payload.get("status", "UNKNOWN_ERROR")
-    return status, payload.get("results", [])
+    results = []
+    for place in places:
+        converted = _to_legacy_place(place)
+        location = converted["geometry"]["location"]
+        place_lat, place_lng = _safe_float(location["lat"]), _safe_float(location["lng"])
+        if place_lat is None or place_lng is None:
+            continue
+        if _haversine_meters(lat, lng, place_lat, place_lng) > radius:
+            continue
+        results.append(converted)
+    return ("OK" if results else "ZERO_RESULTS"), results
 
 
 def _rank_results(

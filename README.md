@@ -279,7 +279,7 @@ Matching ignores case and whitespace, though names should still match the LINE d
 | Variable | Description |
 |---|---|
 | `CWA_API_KEY` | Central Weather Administration key, used for weather and earthquakes |
-| `GOOGLE_MAPS_API_KEY` | Google Maps key, used for restaurant recommendations |
+| `GOOGLE_MAPS_API_KEY` | Google Maps key with **Places API (New)** enabled, used for restaurant recommendations. Use a separate Google Cloud project with billing enabled |
 | `WEATHER_API_KEY` | Weather API key |
  
 ### Restaurant Recommendations
