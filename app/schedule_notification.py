@@ -10,7 +10,7 @@ from app.repositories.notification_repository import (
     reschedule_notification,
 )
 from app.repositories.system_state_repository import try_acquire_job_lock
-from app.utils.line_utils import push_line_message_to_users
+from app.utils.line_utils import PushResult, push_line_message_to_users
 from app.utils.logger import setup_logger
 from app.utils.time_utils import ONE_DAY, TAIPEI, advance_daily, format_run_at, now_taipei
 
@@ -19,7 +19,7 @@ scheduler = AsyncIOScheduler(timezone=TAIPEI)
 
 # 延遲超過這個時間就在訊息中註明
 LATE_NOTICE_THRESHOLD = timedelta(minutes=5)
-# 推送失敗時，在這段時間內每分鐘重試；超過就放棄這一次
+# 暫時性失敗（5xx、逾時）時，在這段時間內每分鐘重試；超過就放棄這一次
 RETRY_WINDOW = timedelta(minutes=10)
 
 
@@ -55,12 +55,20 @@ def check_and_send_notifications():
 
         logger.info(f"發現 {len(tasks)} 個到期提醒，準備發送...")
         for task in tasks:
-            sent = push_line_message_to_users(build_reminder_text(task, now), [task.sender_id]) is True
-            if not sent and now - _latest_due_time(task, now) < RETRY_WINDOW:
-                logger.warning(f"提醒 {task.id} 推送失敗，下一分鐘重試")
+            due_at = _latest_due_time(task, now)
+            # 同一次提醒重試時用同一個 retry key，就算上次其實已送達，LINE 也不會重複發送
+            result = push_line_message_to_users(
+                build_reminder_text(task, now),
+                [task.sender_id],
+                retry_key_base=f"reminder:{task.id}:{due_at.isoformat()}",
+            )
+            if result is PushResult.RETRY and now - due_at < RETRY_WINDOW:
+                logger.warning(f"提醒 {task.id} 推送暫時失敗，下一分鐘重試")
                 continue
-            if not sent:
+            if result is PushResult.RETRY:
                 logger.error(f"提醒 {task.id} 推送持續失敗，放棄本次發送")
+            elif result is PushResult.FAILED:
+                logger.error(f"提醒 {task.id} 無法送達（可能已被封鎖），不再重試這一次")
 
             if task.repeat_daily:
                 reschedule_notification(task.id, advance_daily(task.next_run_at, now))

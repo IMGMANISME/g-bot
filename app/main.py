@@ -9,8 +9,8 @@ load_dotenv()
 
 from fastapi import FastAPI, Request, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from linebot import WebhookHandler
-from linebot.exceptions import InvalidSignatureError
+from linebot.v3 import WebhookHandler
+from linebot.v3.exceptions import InvalidSignatureError
 
 from app.line_bot import handle_events, shutdown_background_executor
 from app.database import init_db
@@ -20,6 +20,7 @@ from app.config import config, validate_config
 from app.utils.logger import setup_logger
 from app.gemini_engine import validate_gemini_config
 from app.utils.performance import performance_monitor
+from app.utils.line_utils import get_message_quota
 
 logger = setup_logger("main")
 
@@ -120,7 +121,9 @@ async def get_metrics(x_metrics_token: str = Header(None)):
         raise HTTPException(status_code=404, detail="Not found")
     if x_metrics_token != config.METRICS_TOKEN:
         raise HTTPException(status_code=403, detail="Forbidden")
-    return performance_monitor.get_performance_report()
+    report = performance_monitor.get_performance_report()
+    report["line_message_quota"] = get_message_quota()
+    return report
 
 @app.post("/callback")
 async def callback(request: Request, x_line_signature: str = Header(None)):

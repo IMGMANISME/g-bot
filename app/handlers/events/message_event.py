@@ -1,11 +1,10 @@
-from linebot.models import TextSendMessage, QuickReply, QuickReplyButton, MessageAction
 from app.config import config
 from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions, rate_limit
 from app.utils.time_utils import format_run_at, now_taipei
 from app.utils.line_utils import (
     get_sender_id, get_chat_id, safe_reply, safe_reply_message, show_loading_animation,
-    get_memory_id, get_or_fetch_user_name, line_bot_api,
+    get_memory_id, get_or_fetch_user_name,
     format_user_message_for_memory, is_multi_user_chat
 )
 from app.repositories.user_repository import get_user_state
@@ -41,24 +40,11 @@ def handle_reminder_list(event, sender_id: str):
     if len(notifications) > 8:
         lines.append("\n...還有更多提醒，請使用「我的提醒」來查看。\n如果要刪除，請輸入：\n取消提醒 <編號>")
 
-    buttons = [QuickReplyButton(action=MessageAction(label="刪除全部提醒", text="刪除全部提醒"))]
-    for b in notifications[:8]:
-        label = f"取消提醒 {b.id}"
-        text = f"@G-bot 取消提醒 {b.id}" if "mention" in state else f"取消提醒 {b.id}"
-        buttons.append(QuickReplyButton(action=MessageAction(label=label, text=text)))
-    
-    buttons.append(QuickReplyButton(action=MessageAction(label="取消", text="#選單")))
-    
-    msg = TextSendMessage(
-        text="\n".join(lines),
-        quick_reply=QuickReply(items=buttons)
-    )
-    
-    try:
-        line_bot_api.reply_message(event.reply_token, msg)
-    except Exception as e:
-        logger.error(f"提醒列表回覆失敗: {e}")
-        safe_reply(event, "\n".join(lines))
+    prefix = mention_prefix(state)
+    buttons = [QuickReplyItem("刪除全部提醒", f"{prefix}刪除全部提醒")]
+    buttons += [QuickReplyItem(f"取消提醒 {b.id}", f"{prefix}取消提醒 {b.id}") for b in notifications[:8]]
+    buttons.append(QuickReplyItem("取消", f"{prefix}#選單"))
+    safe_reply_message(event, build_reply_message("\n".join(lines), buttons))
 
 @handle_exceptions("⚠️ 對話處理失敗")
 def handle_assistant_message(event, sender_id: str, chat_id: str, memory_id: str, user_input: str, prefix: str):
@@ -80,11 +66,9 @@ def handle_assistant_message(event, sender_id: str, chat_id: str, memory_id: str
 @handle_exceptions("⚠️ 特殊回覆處理失敗")
 def handle_special_reply(event, special_type: str, sender_id: str):
     if special_type == "#選單":
-        msg = build_quick_intro_message(event, sender_id)
-        line_bot_api.reply_message(event.reply_token, msg)
+        safe_reply_message(event, build_quick_intro_message(event, sender_id))
     elif special_type == "#幫助":
-        msg = build_quick_help_message(event)
-        line_bot_api.reply_message(event.reply_token, msg)
+        safe_reply_message(event, build_quick_help_message(event))
     elif special_type == "我的提醒":
         handle_reminder_list(event, sender_id)
 

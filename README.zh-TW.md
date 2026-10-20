@@ -84,7 +84,7 @@ flowchart TB
 `SYSTEM_PROMPT_PROFILE` 環境變數指向 `app/prompts/<profile>/`，內含 `conversation.txt`（對話人格）。新增一個資料夾即可衍生出用途完全不同的 bot，不需修改任何程式碼。
  
 **服務可觀測性**
-`/health` 檢查服務與資料庫連線狀態；`/metrics` 提供效能指標，並以 `METRICS_TOKEN` 保護，未設定時回傳 404。
+`/health` 檢查服務與資料庫連線狀態；`/metrics` 提供效能指標與本月 LINE 推播額度用量，並以 `METRICS_TOKEN` 保護，未設定時回傳 404。
  
 ---
  
@@ -259,7 +259,7 @@ G-Bot 會用 LINE 顯示名稱比對這份清單。命中時，AI 會用更禮�
 |---|---|---|
 | GET | `/` | 基本服務狀態 |
 | GET | `/health` | 健康檢查，包含資料庫連線 |
-| GET | `/metrics` | 效能指標 |
+| GET | `/metrics` | 效能指標與 LINE 訊息額度 |
 | POST | `/callback` | LINE webhook |
  
 ## 環境變數

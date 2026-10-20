@@ -155,7 +155,7 @@ def check_earthquake_job(min_magnitude: float = 4.0):
         user_ids = get_earthquake_recipient_ids(magnitude, min_magnitude)
         if user_ids:
             logger.info(f"🚨 地震推播: 規模 {magnitude}，推送給 {len(user_ids)} 位用戶")
-            push_line_message_to_users(message, user_ids, image_url=image_url)
+            push_line_message_to_users(message, user_ids, image_url=image_url, retry_key_base=f"earthquake:{eq_id}")
         else:
             logger.warning("沒有用戶可推播地震訊息")
 

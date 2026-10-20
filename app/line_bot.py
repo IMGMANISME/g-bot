@@ -1,5 +1,5 @@
-from linebot import WebhookHandler
-from linebot.models import FollowEvent, JoinEvent, MessageEvent, TextMessage, LocationMessage
+from linebot.v3 import WebhookHandler
+from linebot.v3.webhooks import FollowEvent, JoinEvent, LocationMessageContent, MessageEvent, TextMessageContent
 import time
 from concurrent.futures import ThreadPoolExecutor
 from app.handlers.events.location_event import handle_location
@@ -39,7 +39,7 @@ def shutdown_background_executor():
 def handle_events(handler: WebhookHandler):
     """註冊 LINE Bot 的事件處理器"""
     
-    @handler.add(MessageEvent, message=LocationMessage)
+    @handler.add(MessageEvent, message=LocationMessageContent)
     def wrapper_handle_location(event):
         try:
             logger.info("收到位置訊息事件")
@@ -47,7 +47,7 @@ def handle_events(handler: WebhookHandler):
         except Exception as e:
             logger.error(f"路由位置訊息時發生錯誤: {e}", exc_info=True)
 
-    @handler.add(MessageEvent, message=TextMessage)
+    @handler.add(MessageEvent, message=TextMessageContent)
     def wrapper_handle_message(event):
         try:
             logger.info("收到文字訊息事件")

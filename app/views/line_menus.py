@@ -1,27 +1,33 @@
-from linebot.models import QuickReply, QuickReplyButton, MessageAction, LocationAction, TextSendMessage
+from linebot.v3.messaging import (
+    LocationAction,
+    MessageAction,
+    QuickReply,
+    QuickReplyItem as LineQuickReplyItem,
+    TextMessage,
+)
 from app.repositories.user_repository import get_user_state
 from app.tools.executor import QuickReplyItem
 
 LINE_TEXT_LIMIT = 5000
 
 def create_quick_reply_buttons(items: list) -> QuickReply:
-    buttons = [QuickReplyButton(action=MessageAction(label=label, text=text)) 
+    buttons = [LineQuickReplyItem(action=MessageAction(label=label, text=text))
                for label, text in items]
     return QuickReply(items=buttons)
 
-def build_reply_message(text: str, quick_replies: list[QuickReplyItem]) -> TextSendMessage:
+def build_reply_message(text: str, quick_replies: list[QuickReplyItem]) -> TextMessage:
     """文字回覆，可附快速回覆按鈕；text 為 None 的按鈕是「傳送位置」。"""
     buttons = [
-        QuickReplyButton(action=LocationAction(label=item.label) if item.text is None
-                         else MessageAction(label=item.label, text=item.text))
+        LineQuickReplyItem(action=LocationAction(label=item.label) if item.text is None
+                           else MessageAction(label=item.label, text=item.text))
         for item in quick_replies[:13]
     ]
-    return TextSendMessage(
+    return TextMessage(
         text=text[:LINE_TEXT_LIMIT],
         quick_reply=QuickReply(items=buttons) if buttons else None,
     )
 
-def build_quick_intro_message(event, sender_id: str) -> TextSendMessage:
+def build_quick_intro_message(event, sender_id: str) -> TextMessage:
     state = get_user_state(sender_id)
     source_type = event.source.type
     
@@ -34,12 +40,12 @@ def build_quick_intro_message(event, sender_id: str) -> TextSendMessage:
     else:
         items = base_items + [("吃什麼？", "吃什麼?"), ("我的提醒", "我的提醒")]
     
-    return TextSendMessage(
+    return TextMessage(
         text="請選擇你想做的事 👇",
         quick_reply=create_quick_reply_buttons(items)
     )
 
-def build_quick_help_message(event) -> TextSendMessage:
+def build_quick_help_message(event) -> TextMessage:
     source_type = event.source.type
     
     if source_type == "group":
@@ -49,7 +55,7 @@ def build_quick_help_message(event) -> TextSendMessage:
         help_text = ("🛠️ 可用指令：\n• #選單 - 出示選單\n• #狀態 - 查看目前回話狀態\n• #功能 - 查看相關功能\n• #安靜 - 停止對話\n• #說話 - 恢復回應\n• 我的設定 - 查看目前設定\n• 地震通知開/關、地震門檻 4.5\n• #幫助 - 顯示說明")
         items = [("選單", "#選單"), ("狀態", "#狀態"), ("功能", "#功能"), ("設定", "我的設定"), ("安靜", "#安靜"), ("說話", "#說話")]
     
-    return TextSendMessage(text=help_text, quick_reply=create_quick_reply_buttons(items))
+    return TextMessage(text=help_text, quick_reply=create_quick_reply_buttons(items))
 
 
 # --- 主動引導 ---
@@ -59,10 +65,11 @@ def mention_prefix(state: str) -> str:
     return "@G-bot " if "mention" in state else ""
 
 
-def build_welcome_message() -> TextSendMessage:
-    """被加好友時的招呼。"""
+def build_welcome_message(is_unblocked: bool = False) -> TextMessage:
+    """被加好友時的招呼；解除封鎖的人改說歡迎回來。"""
+    greeting = "歡迎回來！有需要隨時叫我，" if is_unblocked else "嗨，我是 G-Bot！直接跟我聊天就可以，"
     text = (
-        "嗨，我是 G-Bot！直接跟我聊天就可以，也可以這樣用我：\n\n"
+        f"{greeting}也可以這樣用我：\n\n"
         "☀️ 問天氣：「高雄明天會下雨嗎」\n"
         "⏰ 設提醒：「明天早上八點提醒我開會」\n"
         "🍜 找吃的：先傳位置給我，再問「附近有什麼好吃的」\n\n"
@@ -76,7 +83,7 @@ def build_welcome_message() -> TextSendMessage:
     ])
 
 
-def build_group_welcome_message() -> TextSendMessage:
+def build_group_welcome_message() -> TextMessage:
     """被拉進群組或聊天室時的自我介紹。"""
     text = (
         "大家好，我是 G-Bot！\n\n"
@@ -92,7 +99,7 @@ def build_group_welcome_message() -> TextSendMessage:
     ])
 
 
-def build_location_received_message(prefix: str) -> TextSendMessage:
+def build_location_received_message(prefix: str) -> TextMessage:
     """收到位置後，提供找餐廳的快捷按鈕。"""
     call = "標記我並問" if prefix else "直接問我"
     text = f"📍 收到你的位置了！想吃什麼{call}，例如「附近有什麼好吃的」「便宜的拉麵」。"

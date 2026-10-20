@@ -5,11 +5,10 @@ import hmac
 import json
 
 import pytest
-from linebot import WebhookHandler
+from linebot.v3 import WebhookHandler
 
 import app.handlers.events.location_event as location_event
 import app.handlers.events.message_event as message_event
-import app.handlers.events.welcome_event as welcome_event
 import app.line_bot as line_bot
 import app.repositories.user_repository as user_repository
 import app.utils.line_utils as line_utils
@@ -23,20 +22,18 @@ MENTION_GROUP = {"type": "group", "groupId": "G_mention", "userId": "U2"}
 def bot(monkeypatch):
     state = {"replies": [], "locations": [], "states": {"G_mention": "mention"}}
 
-    class FakeLineApi:
-        def reply_message(self, token, message):
-            state["replies"].append(message)
+    class FakeMessagingApi:
+        def reply_message(self, request):
+            state["replies"].extend(request.messages)
 
-        def push_message(self, to, message):
-            state["replies"].append(message)
+        def push_message(self, request, x_line_retry_key=None):
+            state["replies"].extend(request.messages)
 
     class SyncExecutor:
         def submit(self, fn):
             fn()
 
-    fake = FakeLineApi()
-    for module in (line_utils, welcome_event, message_event):
-        monkeypatch.setattr(module, "line_bot_api", fake)
+    monkeypatch.setattr(line_utils, "messaging_api", FakeMessagingApi())
     monkeypatch.setattr(line_bot, "background_executor", SyncExecutor())
     get_state = lambda chat_id: state["states"].get(chat_id, "active")
     for module in (user_repository, location_event, message_event):
@@ -80,10 +77,15 @@ def button_texts(message):
 
 
 def test_follow_sends_welcome(bot):
-    reply = bot["send"](event("follow", USER))
+    reply = bot["send"](event("follow", USER, follow={"isUnblocked": False}))
     assert "我是 G-Bot" in reply.text and "#幫助" in reply.text
     assert labels(reply) == ["台北天氣", "10 分鐘後提醒我", "📍 傳送位置", "幫助"]
     assert type(reply.quick_reply.items[2].action).__name__ == "LocationAction"
+
+
+def test_unblock_says_welcome_back(bot):
+    reply = bot["send"](event("follow", USER, follow={"isUnblocked": True}))
+    assert reply.text.startswith("歡迎回來")
 
 
 def test_join_introduces_in_group(bot):
@@ -149,3 +151,13 @@ def test_message_goes_to_assistant_with_mention_removed(bot, monkeypatch):
     assert reply.text == "好喔"
     assert seen["user_input"] == "明天早上八點提醒我開會"
     assert seen["mention_prefix"] == "@G-bot " and seen["chat_id"] == "G_mention"
+
+
+def test_group_reply_quotes_the_message(bot):
+    reply = bot["send"](text_event(MENTION_GROUP, "@G-bot #狀態"))
+    assert reply.quote_token == "q"
+
+
+def test_one_on_one_reply_does_not_quote(bot):
+    reply = bot["send"](text_event(USER, "#狀態"))
+    assert reply.quote_token is None

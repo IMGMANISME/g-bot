@@ -84,7 +84,7 @@ In group chats, shared memory is keyed by group ID, and every message is stored 
 The `SYSTEM_PROMPT_PROFILE` environment variable points to `app/prompts/<profile>/`, which holds `conversation.txt` (persona and constraints). Adding a directory produces a completely different bot — no code changes required.
  
 **Service observability**
-`/health` verifies service and database connectivity. `/metrics` reports performance indicators and is protected by `METRICS_TOKEN`; when the token is unset, the endpoint returns 404 rather than leaking data.
+`/health` verifies service and database connectivity. `/metrics` reports performance indicators and this month's LINE push-message quota usage, and is protected by `METRICS_TOKEN`; when the token is unset, the endpoint returns 404 rather than leaking data.
  
 ---
  
@@ -259,7 +259,7 @@ Matching ignores case and whitespace, though names should still match the LINE d
 |---|---|---|
 | GET | `/` | Basic service status |
 | GET | `/health` | Health check, including database connectivity |
-| GET | `/metrics` | Performance metrics |
+| GET | `/metrics` | Performance metrics and LINE message quota |
 | POST | `/callback` | LINE webhook |
  
 ## Environment Variables

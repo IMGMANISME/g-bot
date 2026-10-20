@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-line-bot-sdk
+line-bot-sdk>=3.26,<4
 google-genai
 requests
 python-dotenv

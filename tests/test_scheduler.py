@@ -4,6 +4,7 @@ import pytest
 
 import app.schedule_notification as scheduler
 from app.repositories.notification_repository import NotificationRecord
+from app.utils.line_utils import PushResult
 
 
 def record(id_, message, next_run_at, repeat_daily=False):
@@ -13,11 +14,15 @@ def record(id_, message, next_run_at, repeat_daily=False):
 @pytest.fixture
 def store(monkeypatch, now):
     """記憶體中的提醒資料表，並記錄推送"""
-    state = {"rows": {}, "pushed": [], "fail": set()}
+    state = {"rows": {}, "pushed": [], "keys": [], "fail": {}}
 
-    def push(message, user_ids, image_url=None):
+    def push(message, user_ids, image_url=None, retry_key_base=None):
         state["pushed"].append(message)
-        return not any(tag in message for tag in state["fail"])
+        state["keys"].append(retry_key_base)
+        for tag, result in state["fail"].items():
+            if tag in message:
+                return result
+        return PushResult.SENT
 
     def reschedule(id_, next_run_at):
         old = state["rows"][id_]
@@ -68,8 +73,8 @@ def test_daily_reminder_missed_for_days_is_sent_once(store, now):
     assert store["pushed"] == []
 
 
-def test_failed_push_is_retried_next_minute(store, now):
-    store["fail"].add("重試")
+def test_temporary_failure_is_retried_with_same_key(store, now):
+    store["fail"]["重試"] = PushResult.RETRY
     store["add"](record(1, "重試", now - timedelta(minutes=2)))
     scheduler.check_and_send_notifications()
     assert 1 in store["rows"]
@@ -77,10 +82,18 @@ def test_failed_push_is_retried_next_minute(store, now):
     store["fail"].clear()
     scheduler.check_and_send_notifications()
     assert 1 not in store["rows"] and len(store["pushed"]) == 2
+    assert store["keys"][0] == store["keys"][1] == f"reminder:1:{(now - timedelta(minutes=2)).isoformat()}"
+
+
+def test_permanent_failure_is_not_retried(store, now):
+    store["fail"]["封鎖"] = PushResult.FAILED
+    store["add"](record(1, "封鎖", now - timedelta(minutes=1)))
+    scheduler.check_and_send_notifications()
+    assert 1 not in store["rows"] and len(store["pushed"]) == 1
 
 
 def test_failed_push_gives_up_after_window(store, now):
-    store["fail"].add("放棄")
+    store["fail"]["放棄"] = PushResult.RETRY
     store["add"](record(1, "放棄", now - timedelta(minutes=20)))
     store["add"](record(2, "放棄每日", now - timedelta(minutes=20), repeat_daily=True))
     scheduler.check_and_send_notifications()
