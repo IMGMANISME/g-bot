@@ -12,7 +12,7 @@
  
 一般 LINE Bot 多半是「收到訊息 → 回一句話」的單層腳本，功能一多就難以維護。G-Bot 的目標是把它做成一個**可擴充的服務平台**：
  
-- **模組化查詢** — 天氣、新聞、餐廳、地震等外部服務都是可獨立抽換的模組，新增一種查詢不需要動到核心邏輯
+- **模組化查詢** — 天氣、餐廳、地震等外部服務都是可獨立抽換的模組，新增一種查詢不需要動到核心邏輯
 - **可替換的 Bot 人格** — system prompt 以 profile 資料夾管理，換一個環境變數就能部署成完全不同用途的 bot
 - **主動推播而非被動回應** — 以 APScheduler 支援使用者自訂提醒與地震即時監控
 - **可維運** — 提供 `/health` 與 `/metrics` 端點，部署後能實際監控服務與資料庫狀態
@@ -41,8 +41,6 @@ flowchart TB
     subgraph MODULES["search_modules/"]
         WEATHER["天氣 CWA"]
         MAPS["Google Maps"]
-        TAVILY["Tavily 搜尋"]
-        NBA["NBA"]
     end
  
     PROMPTS["prompts/profile/<br/>可替換 system prompt"]
@@ -93,8 +91,7 @@ flowchart TB
  
 - LINE 文字訊息與位置訊息處理
 - Gemini AI 對話與對話紀錄
-- Tavily 即時搜尋與新聞查詢
-- 天氣、NBA、時間查詢
+- 天氣、時間查詢
 - Google Maps 餐廳推薦
 - 每日或一次性提醒
 - 地震監控與推播
@@ -131,7 +128,7 @@ app/
 ├── models/                    # SQLAlchemy models
 ├── repositories/              # 資料庫存取層
 ├── prompts/                   # 可替換的 bot system prompt 文字模板
-├── search_modules/            # 天氣、NBA、Tavily、Google Maps 等查詢模組
+├── search_modules/            # 天氣、Google Maps 等查詢模組
 ├── utils/                     # logger、cache、decorators、LINE 工具
 └── views/                     # LINE quick reply / menu 建立
 ```
@@ -284,17 +281,6 @@ G-Bot 會用 LINE 顯示名稱比對這份清單。命中時，AI 會用更禮�
 | `CWA_API_KEY` | 中央氣象署 API key，用於天氣與地震 |
 | `GOOGLE_MAPS_API_KEY` | Google Maps API key，用於餐廳推薦 |
 | `WEATHER_API_KEY` | 天氣 API key |
-| `TAVILY_API_KEY` | Tavily API key，用於即時搜尋 |
- 
-### 搜尋與快取
- 
-| 變數 | 預設值 | 說明 |
-|---|---|---|
-| `TAVILY_SEARCH_MAX_RESULTS` | 5 | Tavily 搜尋結果數 |
-| `TAVILY_SEARCH_DEPTH` | basic | Tavily 搜尋深度 |
-| `TAVILY_SEARCH_TOPIC` | general | Tavily 搜尋主題 |
-| `TAVILY_INCLUDE_ANSWER` | true | 是否包含 Tavily 摘要答案 |
-| `TAVILY_CACHE_TTL` | 600 | 搜尋快取秒數 |
  
 ### 餐廳推薦
  
@@ -378,8 +364,7 @@ docker run -d \
  
 ```
 台北天氣
-NBA戰績
-查一下 台灣最新新聞
+現在幾點
 附近餐廳
 ```
  

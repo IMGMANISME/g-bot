@@ -84,14 +84,6 @@ class Config:
     NEAR_RADIUS: int = _get_int("NEAR_RADIUS", 500)
     FAR_RADIUS: int = _get_int("FAR_RADIUS", 2500)
 
-    # Tavily Search 配置
-    TAVILY_API_KEY: Optional[str] = os.getenv("TAVILY_API_KEY")
-    TAVILY_SEARCH_MAX_RESULTS: int = _get_int("TAVILY_SEARCH_MAX_RESULTS", 5)
-    TAVILY_SEARCH_DEPTH: str = os.getenv("TAVILY_SEARCH_DEPTH", "basic")
-    TAVILY_SEARCH_TOPIC: str = os.getenv("TAVILY_SEARCH_TOPIC", "general")
-    TAVILY_INCLUDE_ANSWER: bool = _get_bool("TAVILY_INCLUDE_ANSWER", True)
-    TAVILY_CACHE_TTL: int = _get_int("TAVILY_CACHE_TTL", 600)
-
     # CORS 配置
     CORS_ALLOW_ORIGINS: List[str] = field(
         default_factory=lambda: _get_list("CORS_ALLOW_ORIGINS", "")

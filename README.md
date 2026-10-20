@@ -12,7 +12,7 @@ English | [繁體中文](./README.zh-TW.md)
  
 Most LINE bots are single-layer scripts: receive a message, return a reply. That works until you add the fifth feature, and then nothing is maintainable. G-Bot is my attempt to build one as an **extensible service platform** instead:
  
-- **Modular lookups** — weather, news, restaurants, and earthquake data are independently replaceable modules. Adding a new lookup type requires no changes to core logic.
+- **Modular lookups** — weather, restaurants, and earthquake data are independently replaceable modules. Adding a new lookup type requires no changes to core logic.
 - **Swappable bot personas** — system prompts live in profile directories. Change one environment variable and the same codebase deploys as an entirely different bot.
 - **Proactive, not just reactive** — APScheduler drives user-defined reminders and continuous earthquake monitoring.
 - **Actually operable** — `/health` and `/metrics` endpoints expose service and database state, so the deployment can be monitored rather than guessed at.
@@ -41,8 +41,6 @@ flowchart TB
     subgraph MODULES["search_modules/"]
         WEATHER["Weather CWA"]
         MAPS["Google Maps"]
-        TAVILY["Tavily Search"]
-        NBA["NBA"]
     end
  
     PROMPTS["prompts/profile/<br/>swappable system prompts"]
@@ -93,8 +91,7 @@ The `SYSTEM_PROMPT_PROFILE` environment variable points to `app/prompts/<profile
  
 - LINE text and location message handling
 - Gemini AI conversation with persistent history
-- Tavily real-time search and news lookup
-- Weather, NBA, and time queries
+- Weather and time queries
 - Google Maps restaurant recommendations
 - Daily and one-time reminders
 - Earthquake monitoring and push notifications
@@ -131,7 +128,7 @@ app/
 ├── models/                    # SQLAlchemy models
 ├── repositories/              # Database access layer
 ├── prompts/                   # Swappable bot system prompt templates
-├── search_modules/            # Weather, NBA, Tavily, Google Maps modules
+├── search_modules/            # Weather, Google Maps modules
 ├── utils/                     # Logger, cache, decorators, LINE helpers
 └── views/                     # LINE quick reply / menu builders
 ```
@@ -284,17 +281,6 @@ Matching ignores case and whitespace, though names should still match the LINE d
 | `CWA_API_KEY` | Central Weather Administration key, used for weather and earthquakes |
 | `GOOGLE_MAPS_API_KEY` | Google Maps key, used for restaurant recommendations |
 | `WEATHER_API_KEY` | Weather API key |
-| `TAVILY_API_KEY` | Tavily key, used for real-time search |
- 
-### Search and Caching
- 
-| Variable | Default | Description |
-|---|---|---|
-| `TAVILY_SEARCH_MAX_RESULTS` | 5 | Number of Tavily search results |
-| `TAVILY_SEARCH_DEPTH` | basic | Tavily search depth |
-| `TAVILY_SEARCH_TOPIC` | general | Tavily search topic |
-| `TAVILY_INCLUDE_ANSWER` | true | Whether to include Tavily's summary answer |
-| `TAVILY_CACHE_TTL` | 600 | Search cache lifetime in seconds |
  
 ### Restaurant Recommendations
  
@@ -378,8 +364,7 @@ docker run -d \
  
 ```
 台北天氣                    # Taipei weather
-NBA戰績                     # NBA standings
-查一下 台灣最新新聞          # Search the latest news in Taiwan
+現在幾點                    # Current time
 附近餐廳                    # Nearby restaurants
 ```
  

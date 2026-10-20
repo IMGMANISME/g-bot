@@ -4,7 +4,7 @@ from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions, rate_limit
 from app.utils.line_utils import (
     get_sender_id, get_chat_id, safe_reply, show_loading_animation, 
-    get_memory_id, get_or_fetch_user_name, line_bot_api, safe_reply_message,
+    get_memory_id, get_or_fetch_user_name, line_bot_api,
     format_user_message_for_memory, is_multi_user_chat
 )
 from app.repositories.user_repository import get_user_state
@@ -76,13 +76,7 @@ def handle_realtime_query(event, memory_id: str, user_input: str):
             user_input=user_input,
             memory_user_input=memory_user_input,
         )
-        msg = TextSendMessage(
-            text=reply,
-            quick_reply=QuickReply(items=[
-                QuickReplyButton(action=MessageAction(label="查更詳細", text="查更詳細"))
-            ])
-        )
-        safe_reply_message(event, msg)
+        safe_reply(event, reply)
     except Exception as e:
         logger.error(f"即時查詢失敗: {e}")
         safe_reply(event, "⚠️ 即時查詢失敗，請稍後再試")
@@ -163,7 +157,7 @@ def handle_message(event):
         handle_restaurant_search(event, sender_id, user_input)
         return
 
-    if user_input == "查更詳細" or needs_realtime_info(user_input):
+    if needs_realtime_info(user_input):
         handle_realtime_query(event, memory_id, user_input)
         return
 
