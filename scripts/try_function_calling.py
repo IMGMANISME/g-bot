@@ -113,6 +113,7 @@ def build_cases(now: datetime) -> list[tuple[str, str | None, list]]:
         ("整天每三小時提醒我吃藥", "create_reminder",
          [check_fields(content="吃藥", interval_minutes=180, window_start="00:00", window_end="00:00")]),
         ("每30分鐘提醒我看一下烤箱", "create_reminder", [check_fields(interval_minutes=30)]),
+        ("我想要定時提醒我喝水", "start_water_reminder", []),
         ("我今天好累", None, []),
         ("我明天要開會", None, []),
         ("你覺得台北好玩嗎", None, []),

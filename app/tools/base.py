@@ -31,6 +31,7 @@ TOOL_MODULES = (
     "app.tools.reminders",
     "app.tools.restaurants",
     "app.tools.current_time",
+    "app.tools.water",
 )
 
 

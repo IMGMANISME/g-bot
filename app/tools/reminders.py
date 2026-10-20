@@ -98,7 +98,7 @@ def create_reminder(args: dict, ctx: ToolContext) -> ToolResult:
     if args.get("interval_minutes") not in (None, "") and interval is None:
         return _ask(f"要多久提醒你「{content}」一次呢？例如每 2 小時。", "看不懂提醒間隔", _when_buttons(content, prefix))
     if interval:
-        if _is_group(ctx.chat_id):
+        if is_group(ctx.chat_id):
             return ToolResult(
                 data={"status": "not_allowed_in_group", "reason": "週期提醒只能在一對一聊天設定"},
                 fallback_text=(
@@ -106,7 +106,7 @@ def create_reminder(args: dict, ctx: ToolContext) -> ToolResult:
                     "在群組裡太常推播會吵到大家。加我好友後私訊我再設定一次就好囉。"
                 ),
             )
-        return _propose_recurring(content, interval, args, ctx)
+        return propose_recurring(content, interval, args, ctx)
 
     if not args.get("datetime"):
         return _ask(f"要在什麼時候提醒你「{content}」呢？", "缺少提醒時間", _when_buttons(content, prefix))
@@ -152,7 +152,7 @@ def _when_buttons(content: str, prefix: str) -> list[QuickReplyItem]:
     ]
 
 
-def _is_group(chat_id: str) -> bool:
+def is_group(chat_id: str) -> bool:
     """LINE 的群組 ID 以 C 開頭、多人聊天室以 R 開頭"""
     return chat_id.startswith(("C", "R"))
 
@@ -186,7 +186,7 @@ def _usage_notes(per_day: int) -> list[str]:
     return notes
 
 
-def _propose_recurring(content: str, interval: int, args: dict, ctx: ToolContext) -> ToolResult:
+def propose_recurring(content: str, interval: int, args: dict, ctx: ToolContext) -> ToolResult:
     start, end = parse_clock(args.get("window_start")), parse_clock(args.get("window_end"))
     window_assumed = start is None and end is None
     window = make_window(start or DEFAULT_WINDOW.start, end or DEFAULT_WINDOW.end)
@@ -326,7 +326,7 @@ def reminder_buttons(record: NotificationRecord) -> list[QuickReplyItem]:
 
 def due_nudges(chat_id: str, now: datetime) -> list[NotificationRecord]:
     """使用者在一對一聊天傳訊息時，該順便提醒的週期提醒"""
-    if _is_group(chat_id):
+    if is_group(chat_id):
         return []
     return [
         r for r in get_recurring_notifications(chat_id)

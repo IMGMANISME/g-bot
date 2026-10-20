@@ -13,6 +13,7 @@ import app.handlers.events.postback_event as postback_event
 import app.line_bot as line_bot
 import app.repositories.user_repository as user_repository
 import app.utils.line_utils as line_utils
+import app.views.line_menus as line_menus
 
 SECRET = "test-secret"
 USER = {"type": "user", "userId": "U1"}
@@ -37,7 +38,7 @@ def bot(monkeypatch):
     monkeypatch.setattr(line_utils, "messaging_api", FakeMessagingApi())
     monkeypatch.setattr(line_bot, "background_executor", SyncExecutor())
     get_state = lambda chat_id: state["states"].get(chat_id, "active")
-    for module in (user_repository, location_event, message_event, postback_event):
+    for module in (user_repository, location_event, message_event, postback_event, line_menus):
         monkeypatch.setattr(module, "get_user_state", get_state)
     monkeypatch.setattr(location_event, "upsert_user_location", lambda sid, lat, lng: state["locations"].append((sid, lat, lng)))
     monkeypatch.setattr(message_event, "get_user_notifications", lambda sid: [])
@@ -80,8 +81,9 @@ def button_texts(message):
 def test_follow_sends_welcome(bot):
     reply = bot["send"](event("follow", USER, follow={"isUnblocked": False}))
     assert "我是 G-Bot" in reply.text and "#幫助" in reply.text
-    assert labels(reply) == ["台北天氣", "10 分鐘後提醒我", "📍 傳送位置", "幫助"]
-    assert type(reply.quick_reply.items[2].action).__name__ == "LocationAction"
+    assert labels(reply) == ["💧 喝水提醒", "台北天氣", "10 分鐘後提醒我", "📍 傳送位置", "幫助"]
+    assert type(reply.quick_reply.items[0].action).__name__ == "PostbackAction"
+    assert type(reply.quick_reply.items[3].action).__name__ == "LocationAction"
 
 
 def test_unblock_says_welcome_back(bot):
@@ -285,3 +287,19 @@ def test_nudge_lookup_failure_does_not_break_reply(assistant_reply, monkeypatch)
     monkeypatch.setattr(message_event, "due_nudges", broken)
     assistant_reply["send"](text_event(USER, "台北天氣"))
     assert [m.text for m in assistant_reply["replies"]] == ["台北今天晴天"]
+
+
+def test_menu_has_water_button_only_in_one_on_one(bot):
+    reply = bot["send"](text_event(USER, "#選單"))
+    assert "💧 喝水提醒" in labels(reply)
+    group_reply = bot["send"](text_event({"type": "group", "groupId": "G1", "userId": "U2"}, "#選單"))
+    assert "💧 喝水提醒" not in labels(group_reply)
+
+
+def test_postback_reply_includes_confirmation_card(bot, monkeypatch):
+    import app.tools.reminders as reminders
+    import app.tools.water as water
+    monkeypatch.setattr(water, "get_recurring_notifications", lambda chat_id: [])
+    monkeypatch.setattr(reminders, "get_message_quota", lambda: {"type": "none"})
+    reply = bot["send"](event("postback", USER, postback={"data": "water_window:0900:2100"}))
+    assert "📋 提醒設定（還沒建立）" in reply.text and "頻率：每 3 小時（09:00–21:00）" in reply.text

@@ -401,6 +401,7 @@ docker run -d \
 Before a recurring reminder is created, the bot shows the frequency, runs per day and estimated push usage, and waits for **確定建立** (Confirm). The window defaults to 09:00–21:00 and may cross midnight (e.g. 22:00–02:00).
 
 - Recurring reminders can only be set in one-on-one chats, so groups aren't flooded with pushes.
+- **One-tap water reminder**: tap **💧 喝水提醒** in the menu or welcome message, or say 「喝水提醒」, then pick a time window (or type one, e.g. 「早上七點到晚上十點」). A confirmation card follows, defaulting to a push every 3 hours and a nudge at most hourly while chatting.
 - Pushed reminders come with **喝了 ✅** (done), **30 分鐘後再提醒** (snooze 30 min) and **今天不用了** (skip today). Marking it done restarts the interval from now.
 - In one-on-one chats, any message you send can carry a nudge (by default every third of the push interval, e.g. pushes every 3 hours and nudges at most hourly while you're chatting). Nudges are replies, so they cost no push quota, and they push the next scheduled reminder back.
  

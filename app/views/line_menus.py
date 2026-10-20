@@ -7,7 +7,8 @@ from linebot.v3.messaging import (
     TextMessage,
 )
 from app.repositories.user_repository import get_user_state
-from app.tools.base import QuickReplyItem
+from app.tools.base import QuickReplyItem, postback_data
+from app.tools.water import WATER_START
 
 LINE_TEXT_LIMIT = 5000
 
@@ -33,6 +34,9 @@ def build_reply_message(text: str, quick_replies: list[QuickReplyItem]) -> TextM
         quick_reply=QuickReply(items=buttons) if buttons else None,
     )
 
+WATER_BUTTON = QuickReplyItem("💧 喝水提醒", data=postback_data(WATER_START))
+
+
 def build_quick_intro_message(event, sender_id: str) -> TextMessage:
     state = get_user_state(sender_id)
     source_type = event.source.type
@@ -45,11 +49,12 @@ def build_quick_intro_message(event, sender_id: str) -> TextMessage:
             items = base_items + [("吃什麼？", "@G-bot 吃什麼?"), ("我的提醒", "我的提醒")]
     else:
         items = base_items + [("吃什麼？", "吃什麼?"), ("我的提醒", "我的提醒")]
-    
-    return TextMessage(
-        text="請選擇你想做的事 👇",
-        quick_reply=create_quick_reply_buttons(items)
-    )
+
+    buttons = [QuickReplyItem(label, text) for label, text in items]
+    if source_type == "user":
+        # 週期提醒只能在一對一聊天設定
+        buttons.append(WATER_BUTTON)
+    return build_reply_message("請選擇你想做的事 👇", buttons)
 
 def build_quick_help_message(event) -> TextMessage:
     source_type = event.source.type
@@ -79,10 +84,12 @@ def build_welcome_message(is_unblocked: bool = False) -> TextMessage:
         "☀️ 問天氣：「高雄明天會下雨嗎」\n"
         "⏰ 設提醒：「明天早上八點提醒我開會」\n"
         "🍜 找吃的：先傳位置給我，再問「附近有什麼好吃的」\n"
-        "🌍 地震速報：輸入「地震通知開」，有感地震馬上通知你\n\n"
+        "🌍 地震速報：輸入「地震通知開」，有感地震馬上通知你\n"
+        "💧 喝水提醒：點下面的按鈕，選好時段就能開始\n\n"
         "想看所有指令，輸入「#幫助」。"
     )
     return build_reply_message(text, [
+        WATER_BUTTON,
         QuickReplyItem("台北天氣", "台北天氣"),
         QuickReplyItem("10 分鐘後提醒我", "10分鐘後提醒我喝水"),
         QuickReplyItem("📍 傳送位置"),

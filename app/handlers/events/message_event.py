@@ -14,6 +14,7 @@ from app.handlers.command_handler import command_processor
 from app.services.assistant_service import get_assistant_reply
 from app.tools.base import QuickReplyItem
 from app.tools.reminders import due_nudges, mark_nudged, reminder_buttons
+from app.tools.water import take_window_answer
 from app.views.line_menus import build_quick_intro_message, build_quick_help_message, build_reply_message, mention_prefix
 
 logger = setup_logger("message_event")
@@ -140,4 +141,6 @@ def handle_message(event):
                 lowered_input = lowered_input.replace(keyword, "")
             user_input = lowered_input.strip()
         
+    # 剛問過喝水提醒的時段，這句是在回答時段：改寫成完整的設定句交給模型
+    user_input = take_window_answer(chat_id, user_input) or user_input
     handle_assistant_message(event, sender_id, chat_id, memory_id, user_input, mention_prefix(state))

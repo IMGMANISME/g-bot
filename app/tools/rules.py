@@ -10,6 +10,7 @@ from app.search_modules.weather import find_city
 from app.tools.current_time import GET_CURRENT_TIME
 from app.tools.reminders import CREATE_REMINDER
 from app.tools.restaurants import RECOMMEND_RESTAURANTS
+from app.tools.water import START_WATER_REMINDER
 from app.tools.weather import GET_WEATHER
 from app.utils.time_utils import find_dates, next_daily_run
 
@@ -17,6 +18,8 @@ RAIN_WORDS = ("下雨", "降雨", "下不下雨", "帶傘")
 TEMPERATURE_WORDS = ("冷不冷", "熱不熱", "會冷", "會熱", "溫度", "氣溫", "幾度")
 QUESTION_WORDS = ("嗎", "？", "?", "會不會", "要不要", "下不下", "冷不冷", "熱不熱", "幾度", "多少")
 TIME_WORDS = ("幾點", "幾號", "星期幾", "禮拜幾")
+# 只說要喝水提醒、沒說頻率：讓使用者選時段
+WATER_REMINDER_PHRASES = {"喝水提醒", "提醒喝水", "提醒我喝水", "設定喝水提醒", "我要喝水提醒", "開啟喝水提醒"}
 RESTAURANT_WORDS = ("吃什麼", "餐廳推薦", "推薦餐廳", "附近餐廳", "附近有什麼好吃")
 
 # 「提醒我 開會 14:30 [每天|一次]」：只接受 HH:MM，其他說法交給模型理解
@@ -108,6 +111,9 @@ def parse_recurring_reminder(text: str) -> dict | None:
 
 def match_fast_path(text: str, now: datetime) -> tuple[str, dict] | None:
     """回傳 (工具名稱, 參數)；沒有把握時回傳 None。"""
+    if text.strip(" 。!！") in WATER_REMINDER_PHRASES:
+        return START_WATER_REMINDER, {}
+
     reminder = parse_strict_reminder(text, now) or parse_recurring_reminder(text)
     if reminder:
         return CREATE_REMINDER, reminder

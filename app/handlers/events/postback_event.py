@@ -19,4 +19,5 @@ def handle_postback(event):
         mention_prefix=mention_prefix(get_user_state(chat_id)),
     )
     result = run_action(event.postback.data, ctx)
-    safe_reply_message(event, build_reply_message(result.fallback_text, result.quick_replies))
+    text = f"{result.fallback_text}\n\n{result.attachment}" if result.attachment else result.fallback_text
+    safe_reply_message(event, build_reply_message(text, result.quick_replies))
