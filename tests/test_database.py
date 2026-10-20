@@ -5,46 +5,79 @@
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 from tests.conftest import TEST_DATABASE_URL
 
 pytestmark = pytest.mark.skipif(not TEST_DATABASE_URL, reason="未設定 TEST_DATABASE_URL，略過資料庫測試")
 
 
-@pytest.fixture
-def db():
-    from app.database import engine, init_db
-    from app.models.base import Base
-    import app.models.notification  # noqa: F401  確保 metadata 已註冊
-
+def _reset_schema(engine):
     with engine.begin() as connection:
         connection.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
-        # 舊版的提醒表：沒有 next_run_at
-        connection.execute(text(
-            "CREATE TABLE scheduled_notifications (id SERIAL PRIMARY KEY, sender_id VARCHAR, message VARCHAR, "
-            "time TIME, repeat_daily BOOLEAN, created_at TIMESTAMP)"
-        ))
-        connection.execute(text(
-            "INSERT INTO scheduled_notifications (sender_id, message, time, repeat_daily) "
-            "VALUES ('U_old', '舊的每日提醒', '08:00', true), ('U_old', '舊的一次提醒', '23:59', false)"
-        ))
-    init_db()
+
+
+@pytest.fixture
+def empty_db():
+    from app.database import engine
+    _reset_schema(engine)
     yield engine
-    Base.metadata.drop_all(bind=engine)
+    _reset_schema(engine)
 
 
-def test_old_reminders_are_migrated(db, now):
-    from app.repositories.notification_repository import backfill_missing_next_run_at, get_user_notifications
-
-    assert backfill_missing_next_run_at(now) == 2
-    rows = {r.message: r for r in get_user_notifications("U_old")}
-    assert rows["舊的每日提醒"].next_run_at.strftime("%m/%d %H:%M") == "10/21 08:00"
-    assert rows["舊的一次提醒"].next_run_at.strftime("%m/%d %H:%M") == "10/20 23:59"
-    assert backfill_missing_next_run_at(now) == 0
+@pytest.fixture
+def db(empty_db):
+    from app.db_migrations import upgrade_database
+    upgrade_database()
+    return empty_db
 
 
-def test_due_reminders_and_reschedule(db, now):
+# --- migration ---
+
+def test_upgrade_creates_all_tables_at_head(db):
+    from app.db_migrations import head_revision
+    tables = set(inspect(db).get_table_names())
+    assert {"user_state", "user_locations", "user_profiles", "memory", "scheduled_notifications",
+            "restaurants", "system_state", "alembic_version"} <= tables
+    with db.connect() as connection:
+        assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar() == head_revision()
+
+
+def test_models_match_migrations(db):
+    """改了 model 卻沒寫 migration 時會失敗：請執行 alembic revision --autogenerate"""
+    from alembic.autogenerate import compare_metadata
+    from alembic.runtime.migration import MigrationContext
+    from app.models import load_all_models
+    from app.models.base import Base
+
+    load_all_models()
+    with db.connect() as connection:
+        context = MigrationContext.configure(connection, opts={"compare_type": True})
+        assert compare_metadata(context, Base.metadata) == []
+
+
+def test_upgrade_is_idempotent(db):
+    from app.db_migrations import upgrade_database
+    upgrade_database()  # 已是最新版本，不應出錯
+
+
+def test_legacy_database_is_refused_and_left_untouched(empty_db):
+    from app.db_migrations import LegacyDatabaseError, upgrade_database
+    with empty_db.begin() as connection:
+        connection.execute(text("CREATE TABLE user_state (sender_id VARCHAR PRIMARY KEY, is_silent INTEGER)"))
+        connection.execute(text("INSERT INTO user_state VALUES ('U1', 1)"))
+
+    with pytest.raises(LegacyDatabaseError, match="請先清空資料庫"):
+        upgrade_database()
+
+    with empty_db.connect() as connection:
+        assert connection.execute(text("SELECT count(*) FROM user_state")).scalar() == 1
+    assert "alembic_version" not in inspect(empty_db).get_table_names()
+
+
+# --- repositories ---
+
+def test_reminders(db, now):
     from app.repositories import notification_repository as repo
 
     due = repo.add_scheduled_notification("C1", "到了", now - timedelta(minutes=1), False)
@@ -58,6 +91,46 @@ def test_due_reminders_and_reschedule(db, now):
     assert repo.delete_notification_by_id("C1", due.id) is True
     assert repo.delete_notification_by_id("C_other", later.id) is False  # 不能刪別人的
     assert [r.message for r in repo.get_user_notifications("C1")] == ["還沒"]
+
+
+def test_user_state_defaults_and_modes(db):
+    from app.repositories import user_repository as repo
+
+    assert repo.get_user_state("C1") == "active"
+    assert repo.get_earthquake_settings("C1") == {"enabled": True, "min_magnitude": None}
+    repo.set_user_state("C1", "silent_mention")
+    assert repo.get_user_state("C1") == "silent_mention"
+    repo.set_user_state("C1", "active")
+    assert repo.get_user_state("C1") == "active"
+
+    # 直接用 SQL 新增也有預設值（server default）
+    with db.begin() as connection:
+        connection.execute(text("INSERT INTO user_state (sender_id) VALUES ('C2')"))
+    assert repo.get_user_state("C2") == "active"
+
+
+def test_location_is_stored_as_numbers(db):
+    from app.repositories import user_repository as repo
+
+    repo.upsert_user_location("U1", 25.033964, 121.564468)
+    assert repo.get_user_location("U1") == (25.033964, 121.564468)
+    repo.upsert_user_location("U1", 22.6273, 120.3014)
+    assert repo.get_user_location("U1") == (22.6273, 120.3014)
+
+
+def test_restaurant_backup_query(db):
+    from app.repositories.restaurant_repository import get_restaurants_backup, save_restaurant
+
+    def place(pid, dlat, rating, price):
+        return {"place_id": pid, "name": pid, "vicinity": "地址", "rating": rating, "price_level": price,
+                "geometry": {"location": {"lat": 25.0 + dlat, "lng": 121.5}}}
+
+    save_restaurant(place("near", 0.001, 4.6, 1), 25.0, 121.5)
+    save_restaurant(place("far", 0.1, 4.9, 1), 25.0, 121.5)
+    save_restaurant(place("low", 0.002, 3.2, 1), 25.0, 121.5)
+    results = get_restaurants_backup(25.0, 121.5, radius=1000, min_rating=3.5)
+    assert [r.place_id for r in results] == ["near"]
+    assert results[0].rating == 4.6  # 評分保留小數
 
 
 def test_job_lock(db):

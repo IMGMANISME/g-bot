@@ -15,7 +15,7 @@ def saved(monkeypatch):
     records = []
 
     def fake_add(chat_id, message, run_at, repeat_daily):
-        record = NotificationRecord(len(records) + 1, chat_id, message, run_at.time(), repeat_daily, run_at)
+        record = NotificationRecord(len(records) + 1, chat_id, message, repeat_daily, run_at)
         records.append(record)
         return record
 

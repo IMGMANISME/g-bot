@@ -133,7 +133,7 @@ def test_permission_error_without_backup(places_api):
 
 
 def test_quota_error_uses_backup(places_api):
-    places_api["backup"] = [RestaurantRecord("old1", "以前存的店", "某地址", 4, 1, str(LAT), str(LNG))]
+    places_api["backup"] = [RestaurantRecord("old1", "以前存的店", "某地址", 4.2, 1, LAT, LNG)]
     places_api["queue"].append(FakeResponse(429, {"error": {"status": "RESOURCE_EXHAUSTED"}}))
     text, ids = gm.search_restaurants_nearby(LAT, LNG, radius=800)
     assert ids == ["old1"] and "歷史資料" in text

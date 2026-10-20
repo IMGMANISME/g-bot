@@ -1,10 +1,9 @@
-from datetime import datetime, time as dtime
+from datetime import datetime
 from dataclasses import dataclass
-from typing import Optional
 
 from app.database import SessionLocal
 from app.models.notification import ScheduledNotification
-from app.utils.time_utils import next_daily_run, to_taipei
+from app.utils.time_utils import to_taipei
 
 
 @dataclass(frozen=True)
@@ -12,9 +11,8 @@ class NotificationRecord:
     id: int
     sender_id: str
     message: str
-    time: dtime
     repeat_daily: bool
-    next_run_at: Optional[datetime]
+    next_run_at: datetime  # 台北時間
 
 
 def _to_record(notification: ScheduledNotification) -> NotificationRecord:
@@ -22,9 +20,8 @@ def _to_record(notification: ScheduledNotification) -> NotificationRecord:
         id=notification.id,
         sender_id=notification.sender_id,
         message=notification.message,
-        time=notification.time,
         repeat_daily=notification.repeat_daily,
-        next_run_at=to_taipei(notification.next_run_at) if notification.next_run_at else None,
+        next_run_at=to_taipei(notification.next_run_at),
     )
 
 
@@ -34,7 +31,6 @@ def add_scheduled_notification(sender_id: str, message: str, run_at: datetime, r
         notification = ScheduledNotification(
             sender_id=sender_id,
             message=message,
-            time=run_at.time().replace(second=0, microsecond=0, tzinfo=None),
             repeat_daily=repeat_daily,
             next_run_at=run_at,
         )
@@ -59,15 +55,6 @@ def reschedule_notification(notification_id: int, next_run_at: datetime):
         db.query(ScheduledNotification).filter_by(id=notification_id).update({"next_run_at": next_run_at})
         db.commit()
 
-def backfill_missing_next_run_at(now: datetime) -> int:
-    """舊版提醒只存每日時間，補上下一次送出時間。"""
-    with SessionLocal() as db:
-        notifications = db.query(ScheduledNotification).filter(ScheduledNotification.next_run_at.is_(None)).all()
-        for notification in notifications:
-            notification.next_run_at = next_daily_run(notification.time, now)
-        db.commit()
-        return len(notifications)
-
 def delete_notification(notification_id: int):
     with SessionLocal() as db:
         db.query(ScheduledNotification).filter_by(id=notification_id).delete()
@@ -78,7 +65,7 @@ def get_user_notifications(sender_id: str):
         notifications = (
             db.query(ScheduledNotification)
             .filter(ScheduledNotification.sender_id == sender_id)
-            .order_by(ScheduledNotification.next_run_at.asc().nulls_last())
+            .order_by(ScheduledNotification.next_run_at.asc())
             .all()
         )
         return [_to_record(notification) for notification in notifications]

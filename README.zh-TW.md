@@ -118,7 +118,9 @@ flowchart TB
 app/
 ├── main.py                    # FastAPI 入口、生命週期與 API route
 ├── config.py                  # 環境變數與設定驗證
-├── database.py                # SQLAlchemy engine、session、資料表初始化
+├── database.py                # SQLAlchemy engine、session
+├── db_migrations.py           # 啟動時自動把資料庫升級到最新 migration
+├── migrations/                # Alembic migration（資料表結構的版本紀錄）
 ├── line_bot.py                # LINE webhook 事件註冊
 ├── gemini_engine.py           # 呼叫 Gemini：聊天、選擇工具、改寫工具結果
 ├── earthquake.py              # 地震資料查詢與通知
@@ -216,6 +218,20 @@ TEST_DATABASE_URL=postgresql://user@localhost:5432/gbot_test pytest
 python scripts/try_function_calling.py   # 工具選擇與參數是否正確
 python scripts/try_assistant.py          # 完整流程與回覆口吻（假資料，不寫資料庫）
 ```
+
+### 資料庫 Migration
+
+資料表結構由 [Alembic](https://alembic.sqlalchemy.org/) 管理，服務啟動時會自動套用尚未執行的 migration，不需要手動升級。
+
+修改 `app/models/` 後，產生新的 migration 並檢查內容：
+
+```bash
+alembic revision --autogenerate -m "說明這次改了什麼"
+```
+
+`alembic` 指令會連到 `DATABASE_URL`，請指向開發用資料庫。如果改了 model 卻忘了產生 migration，`tests/test_database.py` 會失敗提醒。
+
+如果資料庫已有資料表、但不是由 Alembic 建立的（舊版用 `create_all` 建立），服務會停止啟動並提示先清空資料庫，不會自行刪除任何資料。
 
 ### LINE Developers 設定
  

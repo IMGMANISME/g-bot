@@ -2,7 +2,6 @@ import math
 from dataclasses import dataclass
 from typing import Optional, Set
 
-from sqlalchemy import Float, cast
 from app.database import SessionLocal
 from app.models.restaurant import Restaurant
 
@@ -12,10 +11,10 @@ class RestaurantRecord:
     place_id: str
     name: str
     address: str | None
-    rating: int | None
+    rating: float | None
     price_level: int | None
-    lat: str | None
-    lng: str | None
+    lat: float
+    lng: float
 
 
 def _to_record(restaurant: Restaurant) -> RestaurantRecord:
@@ -37,12 +36,11 @@ def save_restaurant(place: dict, lat: float, lng: float):
             return
 
         geometry = place.get("geometry", {}).get("location", {})
-        place_lat = geometry.get("lat", lat)
-        place_lng = geometry.get("lng", lng)
+        place_lat = geometry.get("lat") if geometry.get("lat") is not None else lat
+        place_lng = geometry.get("lng") if geometry.get("lng") is not None else lng
 
-        rating = place.get("rating")
         try:
-            rating_value = int(round(float(rating))) if rating is not None else None
+            rating_value = float(place["rating"]) if place.get("rating") is not None else None
         except (TypeError, ValueError):
             rating_value = None
 
@@ -52,8 +50,8 @@ def save_restaurant(place: dict, lat: float, lng: float):
             existing.address = place.get("vicinity") or existing.address
             existing.rating = rating_value if rating_value is not None else existing.rating
             existing.price_level = place.get("price_level")
-            existing.lat = str(place_lat)
-            existing.lng = str(place_lng)
+            existing.lat = float(place_lat)
+            existing.lng = float(place_lng)
             db.commit()
             return
 
@@ -63,8 +61,8 @@ def save_restaurant(place: dict, lat: float, lng: float):
             address=place.get("vicinity"),
             rating=rating_value,
             price_level=place.get("price_level"),
-            lat=str(place_lat),
-            lng=str(place_lng),
+            lat=float(place_lat),
+            lng=float(place_lng),
         )
         db.add(restaurant)
         db.commit()
@@ -82,13 +80,11 @@ def get_restaurants_backup(
     with SessionLocal() as db:
         lat_diff = radius / 111000
         lng_diff = radius / (111000 * abs(math.cos(math.radians(lat))) + 0.00001)
-        lat_expr = cast(Restaurant.lat, Float)
-        lng_expr = cast(Restaurant.lng, Float)
 
         query = (
             db.query(Restaurant)
-            .filter(lat_expr.between(lat - lat_diff, lat + lat_diff))
-            .filter(lng_expr.between(lng - lng_diff, lng + lng_diff))
+            .filter(Restaurant.lat.between(lat - lat_diff, lat + lat_diff))
+            .filter(Restaurant.lng.between(lng - lng_diff, lng + lng_diff))
             .filter(Restaurant.rating >= min_rating)
             .filter(Restaurant.price_level >= min_price, Restaurant.price_level <= max_price)
         )
@@ -98,12 +94,7 @@ def get_restaurants_backup(
         results = query.all()
 
         def distance_key(place: Restaurant) -> float:
-            try:
-                place_lat = float(place.lat)
-                place_lng = float(place.lng)
-            except (TypeError, ValueError):
-                return float("inf")
-
+            place_lat, place_lng = place.lat, place.lng
             dlat = math.radians(place_lat - lat)
             dlng = math.radians(place_lng - lng)
             a = (

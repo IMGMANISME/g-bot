@@ -10,23 +10,23 @@ def set_silent(sender_id: str):
     with SessionLocal() as db:
         state = db.query(UserState).filter_by(sender_id=sender_id).first()
         if not state:
-            state = UserState(sender_id=sender_id, is_silent=1)
+            state = UserState(sender_id=sender_id, is_silent=True)
             db.add(state)
         else:
-            state.is_silent = 1
+            state.is_silent = True
         db.commit()
 
 def clear_silent(sender_id: str):
     with SessionLocal() as db:
         state = db.query(UserState).filter_by(sender_id=sender_id).first()
         if state:
-            state.is_silent = 0
+            state.is_silent = False
             db.commit()
 
 def is_silent(sender_id: str) -> bool:
     with SessionLocal() as db:
         state = db.query(UserState).filter_by(sender_id=sender_id).first()
-        return state.is_silent == 1 if state else False
+        return bool(state.is_silent) if state else False
 
 def set_mention_mode(sender_id: str, enabled: bool):
     with SessionLocal() as db:
@@ -118,11 +118,11 @@ def upsert_user_location(sender_id: str, lat: float, lng: float):
     with SessionLocal() as db:
         location = db.query(UserLocation).filter_by(sender_id=sender_id).first()
         if not location:
-            location = UserLocation(sender_id=sender_id, latitude=str(lat), longitude=str(lng))
+            location = UserLocation(sender_id=sender_id, latitude=lat, longitude=lng)
             db.add(location)
         else:
-            location.latitude = str(lat)
-            location.longitude = str(lng)
+            location.latitude = lat
+            location.longitude = lng
             location.updated_at = datetime.utcnow()
         db.commit()
 
@@ -130,7 +130,7 @@ def get_user_location(sender_id: str) -> Optional[Tuple[float, float]]:
     with SessionLocal() as db:
         location = db.query(UserLocation).filter_by(sender_id=sender_id).first()
         if location:
-            return float(location.latitude), float(location.longitude)
+            return location.latitude, location.longitude
         return None
 
 def upsert_user_profile(sender_id: str, display_name: str, picture_url: str = None):

@@ -13,7 +13,7 @@ from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 
 from app.line_bot import handle_events, shutdown_background_executor
-from app.database import init_db
+from app.db_migrations import upgrade_database
 from app.earthquake import setup_earthquake_job
 from app.schedule_notification import start_scheduler
 from app.config import config, validate_config
@@ -39,9 +39,8 @@ async def lifespan(app: FastAPI):
         if validate_gemini_config():
             logger.info("✅ Gemini API 連接正常")
         
-        # 初始化資料庫
-        init_db()
-        logger.info("✅ 資料庫初始化完成")
+        # 資料庫升級到最新 migration；失敗就停止啟動，Railway 會保留上一版服務
+        upgrade_database()
         
         # 註冊地震監控任務至排程器
         from app.schedule_notification import scheduler

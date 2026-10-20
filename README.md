@@ -118,7 +118,9 @@ The `SYSTEM_PROMPT_PROFILE` environment variable points to `app/prompts/<profile
 app/
 ├── main.py                    # FastAPI entry point, lifecycle, API routes
 ├── config.py                  # Environment variables and settings validation
-├── database.py                # SQLAlchemy engine, session, table initialization
+├── database.py                # SQLAlchemy engine, session
+├── db_migrations.py           # Upgrades the database to the latest migration on startup
+├── migrations/                # Alembic migrations (versioned schema history)
 ├── line_bot.py                # LINE webhook event registration
 ├── gemini_engine.py           # Gemini calls: chat, tool selection, rewriting tool results
 ├── earthquake.py              # Earthquake data lookup and notification
@@ -216,6 +218,20 @@ To check how the real Gemma model behaves (tool choice, reply tone), use the scr
 python scripts/try_function_calling.py   # Does the model pick the right tool and arguments?
 python scripts/try_assistant.py          # Full flow and reply tone (fake data, no database writes)
 ```
+
+### Database Migrations
+
+The schema is managed by [Alembic](https://alembic.sqlalchemy.org/). Pending migrations run automatically on startup, so there is no manual upgrade step.
+
+After changing anything in `app/models/`, generate a migration and review it:
+
+```bash
+alembic revision --autogenerate -m "describe the change"
+```
+
+`alembic` commands connect to `DATABASE_URL`, so point it at a development database. If a model changes without a matching migration, `tests/test_database.py` fails.
+
+If the database already has tables that Alembic didn't create (older versions used `create_all`), the service refuses to start and asks you to clear the database first. It never deletes data on its own.
 
 ### LINE Developers Setup
  

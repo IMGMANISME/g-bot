@@ -8,7 +8,7 @@ from app.utils.line_utils import PushResult
 
 
 def record(id_, message, next_run_at, repeat_daily=False):
-    return NotificationRecord(id_, f"C{id_}", message, next_run_at.time(), repeat_daily, next_run_at)
+    return NotificationRecord(id_, f"C{id_}", message, repeat_daily, next_run_at)
 
 
 @pytest.fixture
@@ -26,7 +26,7 @@ def store(monkeypatch, now):
 
     def reschedule(id_, next_run_at):
         old = state["rows"][id_]
-        state["rows"][id_] = NotificationRecord(old.id, old.sender_id, old.message, old.time, old.repeat_daily, next_run_at)
+        state["rows"][id_] = NotificationRecord(old.id, old.sender_id, old.message, old.repeat_daily, next_run_at)
 
     monkeypatch.setattr(scheduler, "try_acquire_job_lock", lambda *a, **k: True)
     monkeypatch.setattr(scheduler, "now_taipei", lambda: now)

@@ -4,7 +4,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.repositories.notification_repository import (
     NotificationRecord,
-    backfill_missing_next_run_at,
     delete_notification,
     get_due_notifications,
     reschedule_notification,
@@ -79,10 +78,6 @@ def check_and_send_notifications():
 
 def start_scheduler():
     """啟動 APScheduler"""
-    backfilled = backfill_missing_next_run_at(now_taipei())
-    if backfilled:
-        logger.info(f"已為 {backfilled} 筆舊提醒補上下次送出時間")
-
     # 每分鐘的 0 秒觸發
     scheduler.add_job(
         check_and_send_notifications,

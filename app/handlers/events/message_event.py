@@ -31,10 +31,7 @@ def handle_reminder_list(event, sender_id: str):
     now = now_taipei()
     lines = ["📋你的提醒列表："]
     for b in notifications:
-        when = (
-            format_run_at(b.next_run_at, b.repeat_daily, now) if b.next_run_at
-            else f"{'每天' if b.repeat_daily else '一次'} {b.time.strftime('%H:%M')}"
-        )
+        when = format_run_at(b.next_run_at, b.repeat_daily, now)
         lines.append(f"• 編號 {b.id}｜{when}｜{b.message}")
 
     if len(notifications) > 8:

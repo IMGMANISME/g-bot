@@ -5,6 +5,7 @@ google-genai
 requests
 python-dotenv
 sqlalchemy<2.1
+alembic>=1.13,<2
 asyncpg
 tenacity
 psycopg2-binary

@@ -48,7 +48,7 @@ _next_id = iter(range(1, 1000))
 
 
 def fake_add_notification(sender_id, message, run_at, repeat_daily):
-    return notification_repo.NotificationRecord(next(_next_id), sender_id, message, run_at.time(), repeat_daily, run_at)
+    return notification_repo.NotificationRecord(next(_next_id), sender_id, message, repeat_daily, run_at)
 
 
 executor.add_scheduled_notification = fake_add_notification

@@ -54,6 +54,22 @@ ${{Postgres.DATABASE_URL}}
 
 ## 疑難排解
 
+### 啟動失敗：「資料庫已有資料表但不是由 Alembic 建立」
+
+資料庫是舊版用 `create_all` 建立的，需要先清空，服務才能用 Alembic 重新建立資料表（**會刪除所有資料**：提醒、聊天室設定、對話紀錄、餐廳備援資料）。
+
+1. 在 Railway 開啟 PostgreSQL 服務的 **Data** 分頁（或用任何能連上資料庫的工具）。
+2. 執行：
+
+   ```sql
+   DROP SCHEMA public CASCADE;
+   CREATE SCHEMA public;
+   ```
+
+3. 回到 Web Service 按 **Redeploy**，啟動時會自動建立資料表。
+
+失敗的部署不會取代正在運作的版本，清空前服務仍會照常回應。
+
 ### 顯示 `localhost:5432 connection refused`
 
 代表 Web Service 正在用 localhost 連 PostgreSQL。請到 Railway Web Service 的 Variables 檢查 `DATABASE_URL`，改成 Railway PostgreSQL 提供的連線字串。
