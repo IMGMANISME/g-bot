@@ -396,6 +396,9 @@ docker run -d \
 每兩小時提醒我喝水          # Recurring: every 2 hours
 早上九點到下午六點，每小時提醒我起來動一動  # Recurring within a time window
 取消提醒 1                  # Cancel reminder #1
+我現在有哪些提醒            # List reminders
+我剛喝了水                  # Same as tapping 喝了: restarts the interval from now
+不用再提醒我喝水了          # Cancel by content; asks which one if several match
 ```
 
 Before a recurring reminder is created, the bot shows the frequency, runs per day and estimated push usage, and waits for **確定建立** (Confirm). The window defaults to 09:00–21:00 and may cross midnight (e.g. 22:00–02:00).

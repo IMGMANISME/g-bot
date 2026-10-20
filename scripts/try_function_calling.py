@@ -114,6 +114,13 @@ def build_cases(now: datetime) -> list[tuple[str, str | None, list]]:
          [check_fields(content="吃藥", interval_minutes=180, window_start="00:00", window_end="00:00")]),
         ("每30分鐘提醒我看一下烤箱", "create_reminder", [check_fields(interval_minutes=30)]),
         ("我想要定時提醒我喝水", "start_water_reminder", []),
+        # 查詢、回報完成、取消
+        ("我現在有哪些提醒", "list_reminders", []),
+        ("我剛喝完一杯水了", "mark_reminder_done", [check_fields(content="水")]),
+        ("藥已經吃了", "mark_reminder_done", [check_fields(content="藥")]),
+        ("不用再提醒我喝水了", "cancel_reminder", [check_fields(content="喝水")]),
+        ("把明天開會的提醒刪掉", "cancel_reminder", [check_fields(content="開會")]),
+        ("我喜歡喝水", None, []),
         ("我今天好累", None, []),
         ("我明天要開會", None, []),
         ("你覺得台北好玩嗎", None, []),

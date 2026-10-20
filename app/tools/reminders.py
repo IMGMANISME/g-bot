@@ -12,8 +12,10 @@ from datetime import datetime, time, timedelta
 from app.repositories.notification_repository import (
     NotificationRecord,
     add_scheduled_notification,
+    delete_notification_by_id,
     get_notification,
     get_recurring_notifications,
+    get_user_notifications,
     record_reminded,
     reschedule_notification,
 )
@@ -30,6 +32,9 @@ from app.utils.time_utils import TAIPEI, format_run_at, next_daily_run
 logger = setup_logger("reminder_tools")
 
 CREATE_REMINDER = "create_reminder"
+LIST_REMINDERS = "list_reminders"
+MARK_REMINDER_DONE = "mark_reminder_done"
+CANCEL_REMINDER = "cancel_reminder"
 CONFIRM_DRAFT = "reminder_confirm"
 DISCARD_DRAFT = "reminder_discard"
 MARK_DONE = "reminder_done"
@@ -384,3 +389,122 @@ def skip_today(params: list[str], ctx: ToolContext) -> ToolResult:
     next_run = skip_today_run(record.interval_minutes, record.window, ctx.now)
     record_reminded(record.id, ctx.now, next_run)
     return ToolResult({}, f"好，今天先不提醒了，{format_run_at(next_run, False, ctx.now)}再開始。")
+
+
+# --- 查詢、完成、取消：讓使用者用自然的說法處理提醒 ---
+
+LIST_BUTTON_LIMIT = 8  # 清單上最多附幾個取消按鈕（快速回覆最多 13 個）
+
+
+def describe_when(record: NotificationRecord, now: datetime) -> str:
+    if record.is_recurring:
+        return f"{describe_recurrence(record.interval_minutes, record.window)}，下一次{format_run_at(record.next_run_at, False, now)}"
+    return format_run_at(record.next_run_at, record.repeat_daily, now)
+
+
+def build_reminder_list(records: list[NotificationRecord], now: datetime, prefix: str) -> ToolResult:
+    """提醒清單（「我的提醒」指令與 list_reminders 工具共用）"""
+    if not records:
+        return ToolResult(
+            {"status": "empty"},
+            "📭 你目前沒有任何提醒。想設的話直接跟我說，例如「明天早上八點提醒我開會」。",
+            quick_replies=[QuickReplyItem("10 分鐘後提醒我", f"{prefix}10分鐘後提醒我喝水")],
+        )
+
+    lines = ["📋你的提醒列表："]
+    lines += [f"• 編號 {r.id}｜{describe_when(r, now)}｜{r.message}" for r in records]
+    if len(records) > LIST_BUTTON_LIMIT:
+        lines.append("\n下面只列出前幾個的取消按鈕，其他的可以輸入「取消提醒 編號」。")
+
+    buttons = [QuickReplyItem("刪除全部提醒", f"{prefix}刪除全部提醒")]
+    buttons += [QuickReplyItem(f"取消提醒 {r.id}", f"{prefix}取消提醒 {r.id}") for r in records[:LIST_BUTTON_LIMIT]]
+    buttons.append(QuickReplyItem("取消", f"{prefix}#選單"))
+    return ToolResult({"status": "listed", "count": len(records)}, "\n".join(lines), quick_replies=buttons)
+
+
+def _matching(records: list[NotificationRecord], keyword: str) -> list[NotificationRecord]:
+    """內容互相包含就算符合：「喝水」符合「喝水」「記得喝水」，「多喝水」也符合「喝水」"""
+    keyword = (keyword or "").strip()
+    if not keyword:
+        return []
+    return [r for r in records if keyword in r.message or r.message in keyword]
+
+
+@tool(
+    name=LIST_REMINDERS,
+    description="列出使用者目前設定的所有提醒。使用者問有哪些提醒、提醒設了什麼、什麼時候會提醒時使用。",
+    rewrite=False,
+)
+def list_reminders(args: dict, ctx: ToolContext) -> ToolResult:
+    return build_reminder_list(get_user_notifications(ctx.chat_id), ctx.now, ctx.mention_prefix)
+
+
+@tool(
+    name=MARK_REMINDER_DONE,
+    description=(
+        "使用者說已經做了某個週期提醒的事（例如「我剛喝了水」「藥吃了」「已經起來動一動了」）時使用，"
+        "下一次提醒會從現在重新計算。只是聊天提到（例如「我喜歡喝水」）不要使用。"
+    ),
+    parameters={"content": {"type": "STRING", "description": "提醒內容的關鍵字，例如 喝水、吃藥"}},
+    rewrite=False,
+)
+def mark_reminder_done(args: dict, ctx: ToolContext) -> ToolResult:
+    content = str(args.get("content") or "").strip()
+    matches = _matching(get_recurring_notifications(ctx.chat_id), content)
+    if not matches:
+        if "喝" in content:
+            from app.tools.water import WATER_START  # 避免循環匯入
+            return ToolResult(
+                {"status": "no_reminder"},
+                "👍 讚！你目前沒有喝水提醒，要不要設定一個？",
+                quick_replies=[QuickReplyItem("💧 喝水提醒", data=postback_data(WATER_START))],
+            )
+        return ToolResult({"status": "no_reminder"}, f"👍 讚！不過你目前沒有關於「{content}」的週期提醒。")
+    if len(matches) > 1:
+        return ToolResult(
+            {"status": "ambiguous"},
+            f"你有好幾個跟「{content}」有關的提醒，是哪一個呢？",
+            quick_replies=[
+                QuickReplyItem(f"{r.message}（{describe_interval(r.interval_minutes)}）"[:20], data=postback_data(MARK_DONE, r.id))
+                for r in matches[:LIST_BUTTON_LIMIT]
+            ],
+        )
+    return mark_done([str(matches[0].id)], ctx)
+
+
+@tool(
+    name=CANCEL_REMINDER,
+    description=(
+        "使用者要取消、刪除、停止或關掉某個提醒時使用（例如「不用再提醒我喝水了」「取消明天開會的提醒」）。"
+    ),
+    parameters={
+        "content": {"type": "STRING", "description": "要取消的提醒內容關鍵字，例如 喝水、開會"},
+        "reminder_id": {"type": "INTEGER", "description": "使用者有說提醒編號時才填"},
+    },
+    rewrite=False,
+)
+def cancel_reminder(args: dict, ctx: ToolContext) -> ToolResult:
+    records = get_user_notifications(ctx.chat_id)
+    reminder_id = _to_positive_int(args.get("reminder_id"))
+    content = str(args.get("content") or "").strip()
+    matches = [r for r in records if r.id == reminder_id] if reminder_id else _matching(records, content)
+
+    if not matches:
+        return ToolResult(
+            {"status": "not_found"},
+            f"找不到{f'「{content}」的' if content else '要取消的'}提醒耶，看一下目前有哪些提醒吧。",
+            quick_replies=[QuickReplyItem("我的提醒", f"{ctx.mention_prefix}我的提醒")],
+        )
+    if len(matches) > 1:
+        return ToolResult(
+            {"status": "ambiguous"},
+            f"你有好幾個跟「{content}」有關的提醒，要取消哪一個呢？",
+            quick_replies=[
+                QuickReplyItem(f"{r.message}｜{describe_when(r, ctx.now)}"[:20], f"{ctx.mention_prefix}取消提醒 {r.id}")
+                for r in matches[:LIST_BUTTON_LIMIT]
+            ],
+        )
+
+    record = matches[0]
+    delete_notification_by_id(ctx.chat_id, record.id)
+    return ToolResult({"status": "cancelled"}, f"好，已取消「{record.message}」的提醒（{describe_when(record, ctx.now)}）。")

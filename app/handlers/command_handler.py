@@ -218,8 +218,11 @@ class ReminderCommandHandler(BaseCommandHandler):
     """提醒相關命令處理器"""
     
     def can_handle(self, command: str, context: dict) -> bool:
-        # 建立提醒（提醒我…）交給 assistant_service，讓自然說法也能設定
-        return any(keyword in command for keyword in ["取消提醒", "刪除全部提醒", "我的提醒"])
+        # 建立提醒（提醒我…）交給 assistant_service，讓自然說法也能設定；
+        # 「取消提醒」只處理後面接編號（或什麼都沒接）的格式，「取消提醒 喝水」交給取消工具
+        if command.strip().startswith("取消提醒"):
+            return re.fullmatch(r"取消提醒(?:\s+\d+)*", command.strip()) is not None
+        return any(keyword in command for keyword in ["刪除全部提醒", "我的提醒"])
     
     @handle_exceptions("⚠️ 提醒設定失敗")
     def handle(self, command: str, context: dict) -> CommandResult:

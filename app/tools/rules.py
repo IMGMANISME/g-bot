@@ -8,7 +8,7 @@ from datetime import datetime, time as dtime
 
 from app.search_modules.weather import find_city
 from app.tools.current_time import GET_CURRENT_TIME
-from app.tools.reminders import CREATE_REMINDER
+from app.tools.reminders import CANCEL_REMINDER, CREATE_REMINDER, MARK_REMINDER_DONE
 from app.tools.restaurants import RECOMMEND_RESTAURANTS
 from app.tools.water import START_WATER_REMINDER
 from app.tools.weather import GET_WEATHER
@@ -20,6 +20,14 @@ QUESTION_WORDS = ("嗎", "？", "?", "會不會", "要不要", "下不下", "冷
 TIME_WORDS = ("幾點", "幾號", "星期幾", "禮拜幾")
 # 只說要喝水提醒、沒說頻率：讓使用者選時段
 WATER_REMINDER_PHRASES = {"喝水提醒", "提醒喝水", "提醒我喝水", "設定喝水提醒", "我要喝水提醒", "開啟喝水提醒"}
+# 回報喝完水（等同按「喝了」）
+WATER_DONE_PHRASES = {"喝了", "我喝了", "喝過了", "我喝過了", "我喝水了", "喝水了", "我剛喝了", "剛喝了", "我剛喝了水", "剛喝水了", "我剛剛喝了", "我剛剛喝水了"}
+# 「不用再提醒我喝水了」「取消喝水提醒」「關掉喝水提醒」
+CANCEL_PATTERNS = (
+    re.compile(r"^(?:不用|不要|別)再?(?:提醒|叫)我(?P<content>.+?)了?$"),
+    re.compile(r"^(?:取消|關掉|關閉|停止|刪除|刪掉)(?P<content>.+?)(?:的)?提醒$"),
+    re.compile(r"^取消提醒\s*(?P<content>\D.*)$"),  # 「取消提醒 喝水」；接編號的是指令
+)
 RESTAURANT_WORDS = ("吃什麼", "餐廳推薦", "推薦餐廳", "附近餐廳", "附近有什麼好吃")
 
 # 「提醒我 開會 14:30 [每天|一次]」：只接受 HH:MM，其他說法交給模型理解
@@ -111,8 +119,15 @@ def parse_recurring_reminder(text: str) -> dict | None:
 
 def match_fast_path(text: str, now: datetime) -> tuple[str, dict] | None:
     """回傳 (工具名稱, 參數)；沒有把握時回傳 None。"""
-    if text.strip(" 。!！") in WATER_REMINDER_PHRASES:
+    stripped = text.strip(" 。!！~～")
+    if stripped in WATER_REMINDER_PHRASES:
         return START_WATER_REMINDER, {}
+    if stripped in WATER_DONE_PHRASES:
+        return MARK_REMINDER_DONE, {"content": "喝水"}
+    for pattern in CANCEL_PATTERNS:
+        match = pattern.match(stripped)
+        if match and match.group("content").strip():
+            return CANCEL_REMINDER, {"content": match.group("content").strip()}
 
     reminder = parse_strict_reminder(text, now) or parse_recurring_reminder(text)
     if reminder:
