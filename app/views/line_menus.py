@@ -6,7 +6,7 @@ from linebot.v3.messaging import (
     TextMessage,
 )
 from app.repositories.user_repository import get_user_state
-from app.tools.executor import QuickReplyItem
+from app.tools.base import QuickReplyItem
 
 LINE_TEXT_LIMIT = 5000
 

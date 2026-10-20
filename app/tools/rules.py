@@ -7,7 +7,10 @@ import re
 from datetime import datetime, time as dtime
 
 from app.search_modules.weather import find_city
-from app.tools.definitions import CREATE_REMINDER, GET_CURRENT_TIME, GET_WEATHER, RECOMMEND_RESTAURANTS
+from app.tools.current_time import GET_CURRENT_TIME
+from app.tools.reminders import CREATE_REMINDER
+from app.tools.restaurants import RECOMMEND_RESTAURANTS
+from app.tools.weather import GET_WEATHER
 from app.utils.time_utils import find_dates, next_daily_run
 
 RAIN_WORDS = ("下雨", "降雨", "下不下雨", "帶傘")

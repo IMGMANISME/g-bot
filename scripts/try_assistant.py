@@ -26,7 +26,8 @@ import app.repositories.notification_repository as notification_repo  # noqa: E4
 import app.search_modules.weather as weather  # noqa: E402
 import app.services.assistant_service as assistant  # noqa: E402
 import app.services.restaurant_service as restaurant_service  # noqa: E402
-import app.tools.executor as executor  # noqa: E402
+import app.tools.reminders as reminder_tools  # noqa: E402
+import app.tools.restaurants as restaurant_tools  # noqa: E402
 from app.utils.time_utils import now_taipei  # noqa: E402
 
 REQUEST_INTERVAL_SECONDS = 4
@@ -51,7 +52,7 @@ def fake_add_notification(sender_id, message, run_at, repeat_daily):
     return notification_repo.NotificationRecord(next(_next_id), sender_id, message, repeat_daily, run_at)
 
 
-executor.add_scheduled_notification = fake_add_notification
+reminder_tools.add_scheduled_notification = fake_add_notification
 
 # --- 假的天氣資料：明天下雨、週五偏冷 ---
 NOW = now_taipei()
@@ -95,7 +96,7 @@ def fake_recommend(sender_id, query):
     return restaurant_service.RestaurantResult(FAKE_LIST, ["p1", "p2"])
 
 
-executor.get_restaurant_recommendation = fake_recommend
+restaurant_tools.get_restaurant_recommendation = fake_recommend
 
 # --- 記錄每句走了哪條路 ---
 trace = {}

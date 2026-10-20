@@ -14,8 +14,7 @@ from app.config import config
 from app.gemini_engine import GeminiUnavailable, plan_reply, reply_with_tool_result
 from app.prompt_loader import render_prompt
 from app.repositories.message_repository import get_history, save_message
-from app.tools.definitions import TOOLS
-from app.tools.executor import QuickReplyItem, ToolContext, execute_tool
+from app.tools.base import QuickReplyItem, ToolContext, execute_tool, gemini_tools
 from app.tools.rules import match_fast_path
 from app.utils.line_utils import clean_markdown_for_line, remove_repetitive_messages
 from app.utils.logger import setup_logger
@@ -116,7 +115,7 @@ def get_assistant_reply(
         function_call = types.FunctionCall(name=name, args=args)
     else:
         try:
-            turn = plan_reply(system_instruction, history, TOOLS)
+            turn = plan_reply(system_instruction, history, gemini_tools())
         except GeminiUnavailable as e:
             # 錯誤訊息不存進對話紀錄，避免模型之後把它當成自己說過的話
             return AssistantReply(e.reply)
@@ -138,7 +137,7 @@ def get_assistant_reply(
     )
     result = execute_tool(name, args, ctx)
 
-    rewritten = reply_with_tool_result(system_instruction, history, TOOLS, function_call, result.data, model_content)
+    rewritten = reply_with_tool_result(system_instruction, history, gemini_tools(), function_call, result.data, model_content)
     reply = clean_markdown_for_line(rewritten) if rewritten else result.fallback_text
     save_message(memory_id, "assistant", reply)
 

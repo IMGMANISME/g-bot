@@ -71,7 +71,7 @@ flowchart TB
 | `repositories/` | Data access | Centralizes database operations, making testing and storage swaps straightforward |
 | `search_modules/` | External API wrappers | Each external service is isolated, so one outage doesn't cascade |
 | `prompts/` | Bot behavior definitions | Prompts live in files rather than hardcoded strings, so they're version-controlled |
-| `tools/` | Tools the model can call (weather, reminders, restaurants, time) | Tool definitions, parameter validation and execution sit in one place; adding a tool doesn't touch the chat flow |
+| `tools/` | Tools the model can call (weather, reminders, restaurants, time), one module per tool, registered with `@tool` | Description, parameters and handler live together; a new feature is a new tool module that the model picks up automatically, with no changes to the chat flow |
  
 ---
  
@@ -127,7 +127,7 @@ app/
 ├── schedule_notification.py   # APScheduler reminders and background tasks
 ├── handlers/                  # LINE event and command handling
 ├── services/                  # Message flow (assistant_service), restaurant recommendations
-├── tools/                     # Function Calling: tool definitions, fast-path rules, execution
+├── tools/                     # Function Calling: base.py registry, one module per tool, rules.py fast path
 ├── models/                    # SQLAlchemy models
 ├── repositories/              # Database access layer
 ├── prompts/                   # Swappable bot system prompt templates

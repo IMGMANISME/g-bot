@@ -2,11 +2,13 @@ from datetime import datetime
 
 import pytest
 
-import app.tools.executor as executor
+import app.tools.reminders as reminder_tools
+import app.tools.restaurants as restaurant_tools
+import app.tools.weather as weather_tools
 from app.repositories.notification_repository import NotificationRecord
 from app.search_modules.weather import WeatherAnswer
 from app.services.restaurant_service import RestaurantResult
-from app.tools.executor import ToolContext, execute_tool
+from app.tools.base import ToolContext, execute_tool
 
 
 @pytest.fixture
@@ -19,7 +21,7 @@ def saved(monkeypatch):
         records.append(record)
         return record
 
-    monkeypatch.setattr(executor, "add_scheduled_notification", fake_add)
+    monkeypatch.setattr(reminder_tools, "add_scheduled_notification", fake_add)
     return records
 
 
@@ -77,7 +79,7 @@ def weather_calls(monkeypatch):
         calls.append({"city": city, "dates": [d.isoformat() for d in dates], "focus": focus})
         return WeatherAnswer("模板", {"ok": True})
 
-    monkeypatch.setattr(executor, "lookup_weather", fake_lookup)
+    monkeypatch.setattr(weather_tools, "lookup_weather", fake_lookup)
     return calls
 
 
@@ -97,7 +99,7 @@ def test_weather_ignores_unknown_focus(now, weather_calls):
 
 
 def test_restaurants_need_location(now, monkeypatch):
-    monkeypatch.setattr(executor, "get_restaurant_recommendation",
+    monkeypatch.setattr(restaurant_tools, "get_restaurant_recommendation",
                         lambda sid, q: RestaurantResult("先傳位置", [], needs_location=True))
     result = execute_tool("recommend_restaurants", {}, ctx(now))
     assert result.data["status"] == "need_location"
@@ -111,7 +113,7 @@ def test_restaurants_list_is_attached_not_rewritten(now, monkeypatch):
         queries.append(query)
         return RestaurantResult("🍽️ 清單", ["p1", "p2"])
 
-    monkeypatch.setattr(executor, "get_restaurant_recommendation", fake_recommend)
+    monkeypatch.setattr(restaurant_tools, "get_restaurant_recommendation", fake_recommend)
     result = execute_tool("recommend_restaurants", {"price": "cheap", "cuisine": "拉麵", "count": 2},
                           ctx(now, "附近有什麼便宜的拉麵"))
     assert result.attachment == "🍽️ 清單"
@@ -121,7 +123,7 @@ def test_restaurants_list_is_attached_not_rewritten(now, monkeypatch):
 
 
 def test_restaurants_not_found(now, monkeypatch):
-    monkeypatch.setattr(executor, "get_restaurant_recommendation", lambda sid, q: RestaurantResult("找不到", []))
+    monkeypatch.setattr(restaurant_tools, "get_restaurant_recommendation", lambda sid, q: RestaurantResult("找不到", []))
     result = execute_tool("recommend_restaurants", {}, ctx(now))
     assert result.data["status"] == "not_found" and result.attachment is None
 
@@ -147,6 +149,6 @@ def test_tool_crash_is_contained(now, monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("db down")
 
-    monkeypatch.setattr(executor, "add_scheduled_notification", boom)
+    monkeypatch.setattr(reminder_tools, "add_scheduled_notification", boom)
     result = execute_tool("create_reminder", {"datetime": "2026-10-21 08:00", "content": "開會", "repeat_daily": False}, ctx(now))
     assert result.data == {"error": "工具執行失敗"}

@@ -3,7 +3,7 @@ from google.genai import types
 
 import app.services.assistant_service as assistant
 from app.gemini_engine import GeminiUnavailable, ModelTurn
-from app.tools.executor import QuickReplyItem, ToolResult
+from app.tools.base import QuickReplyItem, ToolResult
 
 
 @pytest.fixture

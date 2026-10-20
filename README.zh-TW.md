@@ -71,7 +71,7 @@ flowchart TB
 | `repositories/` | 資料存取 | 集中資料庫操作，方便測試與替換儲存後端 |
 | `search_modules/` | 外部 API 封裝 | 每個外部服務獨立，失效不影響其他功能 |
 | `prompts/` | Bot 行為定義 | 以檔案而非硬編碼管理 prompt，可版本控管 |
-| `tools/` | 模型可呼叫的工具（天氣、提醒、餐廳、時間） | 工具定義、參數檢查與執行集中一處，新增工具不用改對話流程 |
+| `tools/` | 模型可呼叫的工具（天氣、提醒、餐廳、時間），每個工具一個模組，用 `@tool` 註冊 | 說明、參數與執行寫在一起；新增功能只要新增一個工具模組，模型就會自動使用，不用改對話流程 |
  
 ---
  
@@ -127,7 +127,7 @@ app/
 ├── schedule_notification.py   # APScheduler 提醒與背景任務
 ├── handlers/                  # LINE 事件與指令處理
 ├── services/                  # 訊息處理流程（assistant_service）、餐廳推薦
-├── tools/                     # Function Calling：工具定義、快速判斷規則、執行
+├── tools/                     # Function Calling：base.py 註冊表，每個工具一個模組，rules.py 快速判斷
 ├── models/                    # SQLAlchemy models
 ├── repositories/              # 資料庫存取層
 ├── prompts/                   # 可替換的 bot system prompt 文字模板

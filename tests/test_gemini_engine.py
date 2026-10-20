@@ -2,7 +2,9 @@ import pytest
 from google.genai import errors, types
 
 import app.gemini_engine as engine
-from app.tools.definitions import TOOLS
+from app.tools.base import gemini_tools
+
+TOOLS = gemini_tools()
 
 HISTORY = [
     {"role": "user", "content": "嗨"},

@@ -11,7 +11,7 @@ from app.repositories.user_repository import get_user_state
 from app.repositories.notification_repository import get_user_notifications
 from app.handlers.command_handler import command_processor
 from app.services.assistant_service import get_assistant_reply
-from app.tools.executor import QuickReplyItem
+from app.tools.base import QuickReplyItem
 from app.views.line_menus import build_quick_intro_message, build_quick_help_message, build_reply_message, mention_prefix
 
 logger = setup_logger("message_event")

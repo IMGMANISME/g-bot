@@ -4,7 +4,7 @@ import re
 from typing import Optional
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from app.tools.executor import QuickReplyItem
+from app.tools.base import QuickReplyItem
 from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions
 
