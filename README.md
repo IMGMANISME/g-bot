@@ -412,6 +412,8 @@ Before a recurring reminder is created, the bot shows the frequency, runs per da
 
 Not sure what to do? Ask 「你會做什麼」 (what can you do) or 「提醒要怎麼設定」 (how do reminders work), or send `#功能`. G-Bot lists what's available in the current chat with tap-to-try examples, and says so honestly when asked for something it can't do.
 
+Settings work in plain language too: 「我現在設了什麼」 (show settings), 「你先安靜一下」 (be quiet), 「以後被叫才回」 (only reply when tagged), 「幫我打開地震速報」 (turn on earthquake alerts), 「忘掉剛剛的對話」 (forget this conversation), 「提醒全部取消」 (cancel all reminders). Changes come with an undo button; clearing history and cancelling all reminders ask for confirmation first. While muted, 「可以說話了」 (you can talk now) brings G-Bot back.
+
 In a group set to mention-only, if someone mentions "G-bot" or 「機器人」 without tagging it, G-Bot replies 「有人叫我嗎？」 (did someone call me?) and explains how to call it — at most once every 10 minutes per group.
 
 ### Earthquake Notifications

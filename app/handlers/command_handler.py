@@ -122,25 +122,8 @@ class UtilityCommandHandler(BaseCommandHandler):
         return CommandResult(False, "未知的工具命令")
 
     def _build_settings_text(self, context: dict) -> str:
-        from app.repositories.user_repository import get_user_state, get_earthquake_settings
-        from app.config import config
-
-        state_id = context.get("state_id") or context.get("chat_id") or context.get("sender_id")
-        status = get_user_state(state_id)
-        status_map = {
-            "active": "所有訊息都回",
-            "silent": "靜音",
-            "mention": "只在被標記時回",
-            "silent_mention": "靜音 + 標記模式",
-        }
-        earthquake = get_earthquake_settings(state_id)
-        min_magnitude = earthquake["min_magnitude"] or config.EARTHQUAKE_MIN_MAGNITUDE
-        return (
-            "目前設定：\n"
-            f"回覆模式：{status_map.get(status, status)}\n"
-            f"地震通知：{'開' if earthquake['enabled'] else '關'}\n"
-            f"地震門檻：規模 {min_magnitude}"
-        )
+        from app.tools.settings import settings_text
+        return settings_text(context.get("state_id") or context.get("chat_id") or context.get("sender_id"))
 
 class EarthquakeCommandHandler(BaseCommandHandler):
     """地震通知設定命令處理器"""

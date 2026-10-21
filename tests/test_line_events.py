@@ -328,3 +328,32 @@ def test_feature_command_uses_guide(bot):
     reply = bot["send"](text_event(USER, "#功能"))
     assert reply.text.startswith("我可以幫你做這些事")
     assert "☀️ 天氣" in [b.action.label for b in reply.quick_reply.items]
+
+
+@pytest.fixture
+def mode_store(bot, monkeypatch):
+    import app.tools.settings as settings
+    monkeypatch.setattr(settings, "get_user_state", lambda cid: bot["states"].get(cid, "active"))
+    monkeypatch.setattr(settings, "set_user_state", lambda cid, mode: bot["states"].__setitem__(cid, mode))
+    return bot
+
+
+def test_silenced_private_chat_resumes_with_natural_phrase(mode_store):
+    mode_store["states"]["U1"] = "silent"
+    assert mode_store["send"](text_event(USER, "今天天氣如何")) is None  # 靜音中不回
+    reply = mode_store["send"](text_event(USER, "可以說話了"))
+    assert reply.text.startswith("▶️ 我回來了") and mode_store["states"]["U1"] == "active"
+
+
+def test_silenced_mention_group_resumes_only_when_mentioned(mode_store):
+    mode_store["states"]["G_mention"] = "silent_mention"
+    assert mode_store["send"](text_event(MENTION_GROUP, "可以說話了")) is None  # 沒標記：不是在跟我說
+    reply = mode_store["send"](text_event(MENTION_GROUP, "@G-bot 可以說話了"))
+    assert reply.text.startswith("▶️ 我回來了") and mode_store["states"]["G_mention"] == "mention"
+
+
+def test_silenced_mention_group_explains_how_to_resume(mode_store):
+    mode_store["states"]["G_mention"] = "silent_mention"
+    reply = mode_store["send"](text_event(MENTION_GROUP, "@G-bot 台北天氣"))
+    assert "說「可以說話了」" in reply.text
+    assert reply.quick_reply.items[0].action.text == "@G-bot 可以說話了"

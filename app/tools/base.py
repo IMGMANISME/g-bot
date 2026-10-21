@@ -33,6 +33,7 @@ TOOL_MODULES = (
     "app.tools.current_time",
     "app.tools.water",
     "app.tools.guide",
+    "app.tools.settings",
 )
 
 
@@ -50,6 +51,7 @@ class ToolContext:
     user_text: str
     now: datetime
     mention_prefix: str = ""  # 標記模式下，按鈕文字要加上 @G-bot
+    memory_id: str = ""  # 對話紀錄的 ID（清除對話紀錄時用）
 
 
 @dataclass

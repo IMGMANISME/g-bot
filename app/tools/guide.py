@@ -61,12 +61,20 @@ FEATURES = (
         ("現在幾點", "今天星期幾"),
     ),
     Feature(
-        "group", "👥 群組設定", "要我全部都回，或被叫才回",
-        ("#標記", "#都回", "#狀態"),
+        "settings", "⚙️ 設定", "用說的就能查看或修改設定",
+        ("我現在設了什麼", "你先安靜一下", "忘掉剛剛的對話"),
         (
-            "#標記：只在有人在訊息前面加「@G-bot」時才回覆",
-            "#都回：群組裡每則訊息都會回覆",
-            "#安靜／#說話：暫停／恢復回覆",
+            "安靜後說「可以說話了」我就會回來",
+            "改設定後可以按「復原」改回來；清除對話紀錄、取消全部提醒會先問你確定嗎",
+            "也可以用指令：#安靜、#說話、我的設定、#清除",
+        ),
+    ),
+    Feature(
+        "group", "👥 群組設定", "要我全部都回，或被叫才回",
+        ("以後被叫才回", "群組每句都回", "#狀態"),
+        (
+            "被叫才回（#標記）：只在有人在訊息前面加「@G-bot」時才回覆",
+            "每句都回（#都回）：群組裡每則訊息都會回覆",
         ),
         group_only=True,
     ),
@@ -143,7 +151,7 @@ def build_feature_detail(key: str, chat_id: str, prefix: str = "") -> ToolResult
             "enum": FEATURE_KEYS,
             "description": "使用者問的功能；問全部功能或不確定時留空。"
             "weather 天氣、reminder 提醒、recurring 喝水或週期提醒、restaurant 找餐廳、"
-            "earthquake 地震、time 時間、group 群組設定、chat 聊天",
+            "earthquake 地震、time 時間、settings 設定、group 群組設定、chat 聊天",
         },
     },
     rewrite=False,

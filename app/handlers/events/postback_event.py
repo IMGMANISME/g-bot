@@ -1,6 +1,6 @@
 from app.repositories.user_repository import get_user_state
 from app.tools.base import ToolContext, run_action
-from app.utils.line_utils import get_chat_id, get_sender_id, safe_reply_message
+from app.utils.line_utils import get_chat_id, get_memory_id, get_sender_id, safe_reply_message
 from app.utils.logger import setup_logger
 from app.utils.time_utils import now_taipei
 from app.views.line_menus import build_reply_message, mention_prefix
@@ -17,6 +17,7 @@ def handle_postback(event):
         user_text="",
         now=now_taipei(),
         mention_prefix=mention_prefix(get_user_state(chat_id)),
+        memory_id=get_memory_id(event),
     )
     result = run_action(event.postback.data, ctx)
     text = f"{result.fallback_text}\n\n{result.attachment}" if result.attachment else result.fallback_text

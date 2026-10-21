@@ -14,7 +14,8 @@ from app.repositories.user_repository import get_user_state
 from app.repositories.notification_repository import get_user_notifications
 from app.handlers.command_handler import command_processor
 from app.services.assistant_service import get_assistant_reply
-from app.tools.base import QuickReplyItem, postback_data
+from app.tools.base import QuickReplyItem, ToolContext, postback_data
+from app.tools.settings import change_mode, is_resume_request
 from app.tools.guide import GUIDE_ACTION
 from app.tools.reminders import build_reminder_list, due_nudges, mark_nudged, reminder_buttons
 from app.tools.water import take_window_answer
@@ -52,6 +53,13 @@ def handle_assistant_message(event, sender_id: str, chat_id: str, memory_id: str
         now = now_taipei()
         for record in nudges:
             mark_nudged(record, now)
+
+
+def _strip_mention(text: str) -> str:
+    lowered = text.lower()
+    for keyword in config.MENTION_KEYWORDS:
+        lowered = lowered.replace(keyword, "")
+    return lowered.strip()
 
 
 # 標記模式下有人提到我、但沒有標記時，主動回一句（同一個聊天室一段時間內只回一次）
@@ -128,9 +136,19 @@ def handle_message(event):
     state = get_user_state(chat_id)
     mentioned = any(kw in user_input.lower() for kw in config.MENTION_KEYWORDS)
     if "silent" in state:
-        # 只在被標記時提醒「我在靜音」，不然群組裡每則訊息都會被回
-        if "mention" in state and mentioned:
-            safe_reply(event, "⚠️ 我現在是靜音狀態，請先取消靜音我才會回覆你ㄛ。")
+        # 標記模式下要有標記才算在跟我說話；不然群組裡每則訊息都會被回
+        if "mention" in state and not mentioned:
+            return
+        if is_resume_request(_strip_mention(user_input)):
+            ctx = ToolContext(chat_id=chat_id, sender_id=sender_id, user_text=user_input, now=now_taipei(),
+                              mention_prefix=mention_prefix(state), memory_id=memory_id)
+            result = change_mode("resume", ctx)
+            safe_reply_message(event, build_reply_message(result.fallback_text, result.quick_replies))
+        elif "mention" in state:
+            safe_reply_message(event, build_reply_message(
+                "⚠️ 我現在是靜音狀態，說「可以說話了」或輸入「#說話」我就會回來。",
+                [QuickReplyItem("可以說話了", f"{mention_prefix(state)}可以說話了")],
+            ))
         return
     
     if "mention" in state:

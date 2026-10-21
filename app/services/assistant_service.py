@@ -134,6 +134,7 @@ def get_assistant_reply(
         user_text=user_input,
         now=now,
         mention_prefix=mention_prefix,
+        memory_id=memory_id,
     )
     result = execute_tool(name, args, ctx)
 
