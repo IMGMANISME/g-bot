@@ -123,6 +123,10 @@ def build_cases(now: datetime) -> list[tuple[str, str | None, list]]:
         ("不用再提醒我喝水了", "cancel_reminder", [check_fields(content="喝水")]),
         ("把明天開會的提醒刪掉", "cancel_reminder", [check_fields(content="開會")]),
         ("我喜歡喝水", None, []),
+        # 使用說明、做不到的事
+        ("我不知道怎麼用你", "explain_features", []),
+        ("提醒要怎麼設定", "explain_features", [check_fields(topic="reminder")]),
+        ("幫我訂明天的高鐵票", "explain_features", []),
         ("我今天好累", None, []),
         ("我明天要開會", None, []),
         ("你覺得台北好玩嗎", None, []),

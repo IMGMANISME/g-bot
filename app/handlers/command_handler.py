@@ -101,17 +101,10 @@ class UtilityCommandHandler(BaseCommandHandler):
         command_lower = command.lower()
         
         if command_lower == "#功能":
-            function_text = (
-                "🛠️ 目前功能：\n"
-                "• 餐廳推薦 - 傳送位置後問我「吃什麼」或「附近有什麼便宜的拉麵」\n"
-                "• 天氣查詢 - 例如「台北天氣」「高雄明天會下雨嗎」「週末台中冷不冷」\n"
-                "• 時間查詢 - 輸入「現在幾點」或「今天幾號」\n"
-                "• 提醒 - 例如「明天早上八點提醒我開會」「每天晚上十點提醒我吃藥」，輸入「我的提醒」查看\n"
-                "• 地震通知 - 輸入「地震通知開」、「地震通知關」或「地震門檻 4.5」\n"
-                "• 我的設定 - 查看回覆模式與地震通知\n"
-                "• 任意查詢 - 問我任何問題，我都會盡力回覆ㄛ～"
-            )
-            return CommandResult(True, function_text)
+            from app.tools.guide import build_overview
+            chat_id = context.get("chat_id") or context.get("sender_id")
+            overview = build_overview(chat_id, self._prefix(context))
+            return CommandResult(True, overview.fallback_text, quick_replies=overview.quick_replies)
         
         elif command_lower == "#清除":
             from app.repositories.message_repository import clear_history

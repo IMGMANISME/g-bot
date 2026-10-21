@@ -408,6 +408,12 @@ Before a recurring reminder is created, the bot shows the frequency, runs per da
 - Pushed reminders come with **喝了 ✅** (done), **30 分鐘後再提醒** (snooze 30 min) and **今天不用了** (skip today). Marking it done restarts the interval from now.
 - In one-on-one chats, any message you send can carry a nudge (by default every third of the push interval, e.g. pushes every 3 hours and nudges at most hourly while you're chatting). Nudges are replies, so they cost no push quota, and they push the next scheduled reminder back.
  
+### Help
+
+Not sure what to do? Ask 「你會做什麼」 (what can you do) or 「提醒要怎麼設定」 (how do reminders work), or send `#功能`. G-Bot lists what's available in the current chat with tap-to-try examples, and says so honestly when asked for something it can't do.
+
+In a group set to mention-only, if someone mentions "G-bot" or 「機器人」 without tagging it, G-Bot replies 「有人叫我嗎？」 (did someone call me?) and explains how to call it — at most once every 10 minutes per group.
+
 ### Earthquake Notifications
  
 Earthquake alerts are **off by default**; each chat opts in:

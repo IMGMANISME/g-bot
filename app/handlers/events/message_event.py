@@ -1,4 +1,7 @@
+import re
+
 from app.config import config
+from app.utils.cache import global_cache
 from app.utils.logger import setup_logger
 from app.utils.decorators import handle_exceptions, rate_limit
 from app.utils.time_utils import now_taipei
@@ -11,6 +14,8 @@ from app.repositories.user_repository import get_user_state
 from app.repositories.notification_repository import get_user_notifications
 from app.handlers.command_handler import command_processor
 from app.services.assistant_service import get_assistant_reply
+from app.tools.base import QuickReplyItem, postback_data
+from app.tools.guide import GUIDE_ACTION
 from app.tools.reminders import build_reminder_list, due_nudges, mark_nudged, reminder_buttons
 from app.tools.water import take_window_answer
 from app.views.line_menus import build_quick_intro_message, build_quick_help_message, build_reply_message, mention_prefix
@@ -47,6 +52,27 @@ def handle_assistant_message(event, sender_id: str, chat_id: str, memory_id: str
         now = now_taipei()
         for record in nudges:
             mark_nudged(record, now)
+
+
+# 標記模式下有人提到我、但沒有標記時，主動回一句（同一個聊天室一段時間內只回一次）
+CALLED_PATTERN = re.compile(r"g[\s\-_]?bot|機器人", re.IGNORECASE)
+CALLED_HINT_COOLDOWN_SECONDS = 10 * 60
+
+
+def answer_if_called(event, chat_id: str):
+    if not CALLED_PATTERN.search(event.message.text or ""):
+        return
+    key = f"called_hint:{chat_id}"
+    if global_cache.get(key):
+        return
+    global_cache.set(key, True, ttl=CALLED_HINT_COOLDOWN_SECONDS)
+    safe_reply_message(event, build_reply_message(
+        "有人叫我嗎？👀\n要找我幫忙的話，在訊息前面加上「@G-bot」，例如「@G-bot 台北天氣」。",
+        [
+            QuickReplyItem("我會做什麼", data=postback_data(GUIDE_ACTION, "overview")),
+            QuickReplyItem("@G-bot 台北天氣", "@G-bot 台北天氣"),
+        ],
+    ))
 
 
 # 一次回覆最多 5 則訊息，主要回覆佔 1 則
@@ -100,13 +126,16 @@ def handle_message(event):
         return
 
     state = get_user_state(chat_id)
+    mentioned = any(kw in user_input.lower() for kw in config.MENTION_KEYWORDS)
     if "silent" in state:
-        if "mention" in state:
+        # 只在被標記時提醒「我在靜音」，不然群組裡每則訊息都會被回
+        if "mention" in state and mentioned:
             safe_reply(event, "⚠️ 我現在是靜音狀態，請先取消靜音我才會回覆你ㄛ。")
         return
     
     if "mention" in state:
-        if not any(kw in user_input.lower() for kw in config.MENTION_KEYWORDS):
+        if not mentioned:
+            answer_if_called(event, chat_id)
             return
         else:
             lowered_input = user_input.lower()

@@ -32,6 +32,7 @@ TOOL_MODULES = (
     "app.tools.restaurants",
     "app.tools.current_time",
     "app.tools.water",
+    "app.tools.guide",
 )
 
 

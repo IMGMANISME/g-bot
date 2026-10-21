@@ -303,3 +303,28 @@ def test_postback_reply_includes_confirmation_card(bot, monkeypatch):
     monkeypatch.setattr(reminders, "get_message_quota", lambda: {"type": "none"})
     reply = bot["send"](event("postback", USER, postback={"data": "water_window:0900:2100"}))
     assert "📋 提醒設定（還沒建立）" in reply.text and "頻率：每 3 小時（09:00–21:00）" in reply.text
+
+
+def test_called_without_mention_answers_once(bot):
+    reply = bot["send"](text_event(MENTION_GROUP, "這個機器人到底會幹嘛"))
+    assert reply.text.startswith("有人叫我嗎？")
+    assert [b.action.label for b in reply.quick_reply.items] == ["我會做什麼", "@G-bot 台北天氣"]
+    assert bot["send"](text_event(MENTION_GROUP, "G-bot 你在嗎")) is None  # 10 分鐘內不再回
+
+
+@pytest.mark.parametrize("text", ["大家晚安", "gbot很好用", "GBOT"])
+def test_called_detection(bot, text):
+    reply = bot["send"](text_event(MENTION_GROUP, text))
+    assert (reply is not None) == ("bot" in text.lower())
+
+
+def test_silent_mention_group_only_answers_when_mentioned(bot):
+    bot["states"]["G_mention"] = "silent_mention"
+    assert bot["send"](text_event(MENTION_GROUP, "大家晚安")) is None
+    assert "靜音" in bot["send"](text_event(MENTION_GROUP, "@G-bot 在嗎")).text
+
+
+def test_feature_command_uses_guide(bot):
+    reply = bot["send"](text_event(USER, "#功能"))
+    assert reply.text.startswith("我可以幫你做這些事")
+    assert "☀️ 天氣" in [b.action.label for b in reply.quick_reply.items]
