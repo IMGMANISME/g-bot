@@ -126,7 +126,7 @@ def build_cases(now: datetime) -> list[tuple[str, str | None, list]]:
         # 使用說明、做不到的事
         ("我不知道怎麼用你", "explain_features", []),
         ("提醒要怎麼設定", "explain_features", [check_fields(topic="reminder")]),
-        ("幫我訂明天的高鐵票", "explain_features", []),
+        ("幫我訂明天的高鐵票", ("explain_features", None), []),  # 誠實說做不到也算對
         # 用說的改設定
         ("你先安靜一下", "update_reply_mode", [check_fields(mode="silent")]),
         ("以後在群組被叫才回", "update_reply_mode", [check_fields(mode="mention_only")]),
@@ -215,14 +215,16 @@ def main():
         got_tool = calls[0].name if calls else None
         args = dict(calls[0].args or {}) if calls else {}
 
-        tool_match = got_tool == expected_tool
+        accepted = expected_tool if isinstance(expected_tool, tuple) else (expected_tool,)
+        tool_match = got_tool in accepted
         problems = [p for check in checks for p in [check(args)] if p] if tool_match and calls else []
         tool_ok += tool_match
         args_ok += tool_match and not problems
 
         mark = "✅" if tool_match and not problems else ("⚠️" if tool_match else "❌")
         print(f"{index:>2}. {mark} {text}　（{elapsed:.1f} 秒）")
-        print(f"    預期：{expected_tool or '不用工具'}　實際：{got_tool or '不用工具'}")
+        expected_text = " 或 ".join(name or "不用工具" for name in accepted)
+        print(f"    預期：{expected_text}　實際：{got_tool or '不用工具'}")
         if calls:
             print(f"    參數：{args}")
         else:

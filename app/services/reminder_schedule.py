@@ -40,11 +40,16 @@ class Window:
         return f"{self.start:%H:%M}–{self.end:%H:%M}"
 
 
+# 時段長度至少這麼多分鐘就當作整天（模型有時把「整天」填成 00:00–23:59）
+ALL_DAY_MINUTES = MINUTES_PER_DAY - 2
+
+
 def make_window(start: time | None, end: time | None) -> Window | None:
-    """兩者都有且不相同才算有時段；相同或缺少代表整天"""
+    """兩者都有且不相同才算有時段；相同、缺少或幾乎涵蓋整天都代表整天"""
     if start is None or end is None or start == end:
         return None
-    return Window(start, end)
+    window = Window(start, end)
+    return None if window.length_minutes >= ALL_DAY_MINUTES else window
 
 
 def next_interval_run(previous: datetime, interval_minutes: int, window: Window | None, now: datetime) -> datetime:

@@ -68,3 +68,9 @@ def test_make_window_and_parse_clock():
     assert make_window(None, time(21)) is None
     assert parse_clock("9:05") == time(9, 5) and parse_clock("21:00") == time(21, 0)
     assert parse_clock("晚上九點") is None and parse_clock(None) is None and parse_clock("25:00") is None
+
+
+def test_almost_whole_day_counts_as_all_day():
+    """Gemma 實測：「整天」被填成 00:00–23:59"""
+    assert make_window(time(0, 0), time(23, 59)) is None
+    assert make_window(time(0, 0), time(23, 0)) == Window(time(0, 0), time(23, 0))

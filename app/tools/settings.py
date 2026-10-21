@@ -187,7 +187,10 @@ def _confirm(question: str, confirm_action: str) -> ToolResult:
 
 @tool(
     name=CLEAR_CONVERSATION,
-    description="清除你記得的對話內容（例如「忘掉剛剛的對話」「清除聊天紀錄」「我們重新開始」）。會先請使用者確認。",
+    description=(
+        "清除你記得的對話內容（例如「忘掉剛剛的對話」「清除聊天紀錄」「我們重新開始」）。"
+        "直接呼叫即可：工具會自己顯示「確定／算了」按鈕讓使用者確認，你不用先用文字問。"
+    ),
     rewrite=False,
 )
 def clear_conversation(args: dict, ctx: ToolContext) -> ToolResult:
@@ -202,7 +205,10 @@ def confirm_clear(params: list[str], ctx: ToolContext) -> ToolResult:
 
 @tool(
     name=CANCEL_ALL_REMINDERS,
-    description="取消這個聊天室的所有提醒（例如「提醒全部取消」「把我的提醒都刪掉」）。會先請使用者確認。",
+    description=(
+        "取消這個聊天室的所有提醒（例如「提醒全部取消」「把我的提醒都刪掉」）。"
+        "直接呼叫即可：工具會自己顯示「確定／算了」按鈕讓使用者確認，你不用先用文字問。"
+    ),
     rewrite=False,
 )
 def cancel_all_reminders(args: dict, ctx: ToolContext) -> ToolResult:

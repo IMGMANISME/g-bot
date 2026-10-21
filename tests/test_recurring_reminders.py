@@ -150,3 +150,8 @@ def test_daily_time_mistakenly_given_as_window_start(env, now):
     )
     assert result.data == {"status": "created", "when": "每天 22:00", "content": "吃藥", "repeat_daily": True}
     assert env["saved"][0].repeat_daily and not env["saved"][0].is_recurring
+
+
+def test_all_day_written_as_2359(env, now):
+    result = propose(now, interval_minutes=180, window_start="00:00", window_end="23:59")
+    assert "每 3 小時（整天）" in result.attachment
