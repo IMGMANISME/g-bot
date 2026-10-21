@@ -24,6 +24,7 @@ os.environ.setdefault("LINE_CHANNEL_ACCESS_TOKEN", "fake")
 os.environ.setdefault("LOG_LEVEL", "WARNING")
 
 from app.services.reminder_schedule import parse_clock  # noqa: E402
+from app.services.assistant_service import _build_system_instruction  # noqa: E402
 from app.tools.base import gemini_tools  # noqa: E402
 
 MODEL = os.getenv("GEMINI_MODEL", "gemma-4-26b-a4b-it")
@@ -32,12 +33,8 @@ WEEKDAYS = "一二三四五六日"
 REQUEST_INTERVAL_SECONDS = 4  # 避免撞到免費方案每分鐘請求上限
 
 def build_system_instruction(now: datetime) -> str:
-    return (
-        "你是 LINE 聊天機器人 G-Bot，用繁體中文台灣用語回覆。\n"
-        f"現在時間是 {now:%Y-%m-%d %H:%M}（星期{WEEKDAYS[now.weekday()]}，台北時間）。\n"
-        "需要查天氣、建立提醒、推薦餐廳或查時間時，呼叫對應的工具；其他情況直接用文字回覆。\n"
-        "換算「明天」「下週一」「30 分鐘後」等時間時，以上面的現在時間為準。"
-    )
+    """和正式環境相同的 system prompt（人設、現在時間、工具規則），測試結果才會一致"""
+    return _build_system_instruction("U_test", "測試者", False, now)
 
 
 def norm_city(value: str | None) -> str:
